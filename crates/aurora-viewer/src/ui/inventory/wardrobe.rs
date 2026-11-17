@@ -96,7 +96,14 @@ struct Trying {
     /// The item was taken off again: what it replaced goes back on once
     /// the outfit settles.
     reverting: bool,
+    /// The item was seen worn, and when the try began: a try whose item
+    /// was taken off by hand, or was never worn, ends by itself.
+    seen_worn: bool,
+    started: std::time::Instant,
 }
+
+/// A try whose item never shows as worn is given up after this long.
+const TRY_WAIT: std::time::Duration = std::time::Duration::from_secs(15);
 
 #[derive(Default)]
 pub struct State {
@@ -445,8 +452,19 @@ fn refresh_visible(st: &mut InventoryUi, facts: &Facts) {
 /// Try on: the item worn at a click is taken off again by Revert, then
 /// what it had replaced goes back on once the outfit settled.
 fn try_on_step(st: &mut InventoryUi, inv: &Inventory, facts: &Facts, actions: &mut Vec<InvAction>) {
-    let Some(trying) = &st.wardrobe.trying else { return };
-    if !trying.reverting || facts.appearance_busy {
+    let Some(trying) = &mut st.wardrobe.trying else { return };
+    if !trying.reverting {
+        // the try ends with the item: taken off from the bar, a menu or
+        // anywhere else, or never worn at all (a refusal)
+        let worn = facts.worn.contains(&trying.item);
+        trying.seen_worn |= worn;
+        let over = !worn && !facts.appearance_busy && (trying.seen_worn || trying.started.elapsed() > TRY_WAIT);
+        if over {
+            st.wardrobe.trying = None;
+        }
+        return;
+    }
+    if facts.appearance_busy {
         return;
     }
     // a body part cannot be taken off: what it replaced is worn in its place
@@ -479,6 +497,8 @@ fn try_on(st: &mut InventoryUi, inv: &Inventory, facts: &Facts, item: Uuid, acti
         item,
         before: facts.worn.clone(),
         reverting: false,
+        seen_worn: false,
+        started: std::time::Instant::now(),
     });
     wear(st, inv, facts, item, true, actions);
 }
