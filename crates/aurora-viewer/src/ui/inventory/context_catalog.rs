@@ -882,6 +882,7 @@ fn build_mode(inv: &Inventory, id: Uuid, st: &InventoryUi, prefs: &InventoryPref
         );
     }
     extra::similar(&mut c, &organize, inv, id, single, all);
+    extra::wardrobe(&mut c, &organize, inv, id, single, all);
     if item.is_some() || all {
         c.add(
             "replace-links",
@@ -1588,6 +1589,9 @@ mod tests {
             "find-similar-creator",
             "find-similar-type",
             "find-similar-folder",
+            "wardrobe-add",
+            "wardrobe-remove",
+            "wardrobe-card-review",
         ] {
             assert!(ids.contains(id), "missing editor option {id}");
         }

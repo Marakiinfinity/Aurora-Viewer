@@ -179,6 +179,7 @@ mod uninstall;
 mod update_notice;
 mod viewer_stats;
 mod viewfinder;
+mod wardrobe;
 mod wearable_editor;
 mod wearable_favorites;
 mod world_click_demo;
@@ -1307,6 +1308,8 @@ pub struct App {
     demo_script_sources: std::collections::HashMap<aurora_net::scripts::ScriptTarget, String>,
     demo_script_experiences: std::collections::HashMap<aurora_net::scripts::ScriptTarget, uuid::Uuid>,
     inventory_images: inventory_thumbnail::ImageJobs,
+    /// The Wardrobe cards being read (`app/wardrobe.rs`).
+    wardrobe_cards: wardrobe::Cards,
     /// The outfit's auto portrait or square photo mode under way.
     outfit_portrait: Option<outfit_portrait::Session>,
     /// The outfits' batch portraits, from their window's opening.
@@ -2459,6 +2462,7 @@ impl App {
             demo_script_sources: Default::default(),
             demo_script_experiences: Default::default(),
             inventory_images: Default::default(),
+            wardrobe_cards: Default::default(),
             outfit_portrait: None,
             outfit_batch: None,
             appearance_ui,
@@ -3257,7 +3261,12 @@ impl App {
                     ),
                     _ => aurora_i18n::tr!("app-demo-content", value0 = it.name.to_string()).into_bytes(),
                 });
-                self.inventory_preview(it.id, it.asset_id, Ok(bytes));
+                // a Wardrobe card read on its own is nobody else's, as on
+                // the grid
+                let result = Ok(bytes);
+                if !self.wardrobe_preview(it.id, &result) {
+                    self.inventory_preview(it.id, it.asset_id, result);
+                }
                 return;
             }
             if let NetCommand::UpdateOutfit { request, change } = &cmd {
@@ -4211,6 +4220,10 @@ impl App {
             self.local_bakes.loaded(*item, *asset, result);
         }
         if let NetEvent::InventoryPreview { item, asset, result } = ev {
+            // a Wardrobe card read on its own is nobody else's
+            if self.wardrobe_preview(item, &result) {
+                return;
+            }
             if ui::inventory::context_notecards::loaded(&mut self.inventory_ui, &mut self.settings.inventory, item, &result) {
                 self.settings.save();
             }
@@ -4566,6 +4579,8 @@ impl App {
                         crate::settings::account_dir(&l.agent_id).join(crate::world::parcel_env::file_name(&grid)),
                     )
                 };
+                // the Wardrobe's catalogue and the account's own file
+                self.wardrobe_login(l.agent_id);
                 // the saved smart searches of the inventory; the demo keeps
                 // them in memory
                 if !self.demo {
@@ -20394,6 +20409,7 @@ impl App {
                 }
                 t = self.ui_parts.lap(Part::UiPeople, t);
                 self.poll_inventory_animation_stats();
+                self.wardrobe_tick();
                 self.show_imports(&ctx, &p);
                 self.show_blender_live(&ctx, &p);
                 let inventory_preferences = self.settings.inventory.clone();
@@ -20837,6 +20853,9 @@ impl App {
                         continue;
                     }
                     self.update_notice_answer(id, &r);
+                    if self.wardrobe_answer(id, &r) {
+                        continue;
+                    }
                     if matches!(r, crate::world::notifications::Response::Open)
                         && let Some(object) = self.world.notifications.list.iter().find_map(|n| match n.data {
                             crate::world::notifications::Data::Delivery { object } if n.id == id => Some(object),
@@ -23840,6 +23859,7 @@ impl ApplicationHandler for App {
             }
             self.demo_shape_editor();
             self.demo_wearable_editor();
+            self.demo_wardrobe();
             if let Some(mode) = ui::widgets::demo::rez_mode() {
                 if matches!(mode, "build" | "build-object" | "build-delete") {
                     self.build.open_build(crate::build::Tool::Create);

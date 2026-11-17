@@ -125,6 +125,9 @@ impl Default for Profile {
                             "paste-link",
                             "find-links",
                             "find-similar",
+                            "wardrobe-add",
+                            "wardrobe-remove",
+                            "wardrobe-card-review",
                             "replace-links",
                             "separator:marketplace",
                             "marketplace-copy",
@@ -239,6 +242,9 @@ impl Profile {
             "new-outfit",
             "find-similar",
             "folder-color",
+            "wardrobe-add",
+            "wardrobe-remove",
+            "wardrobe-card-review",
         ] {
             let known = self.layout.placements.contains_key(id)
                 || self.layout.removed.contains(id)
@@ -314,6 +320,9 @@ impl Preferences {
                 ("recover-folder", "restore", TEXT),
                 ("copy-name", "image", "children:organize"),
                 ("find-similar", "find-links", "children:organize"),
+                ("wardrobe-add", "find-similar", "children:organize"),
+                ("wardrobe-remove", "wardrobe-add", "children:organize"),
+                ("wardrobe-card-review", "wardrobe-remove", "children:organize"),
             ] {
                 let known = profile.layout.placements.contains_key(id)
                     || profile.layout.removed.contains(id)

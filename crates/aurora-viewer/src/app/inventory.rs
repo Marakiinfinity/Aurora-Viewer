@@ -778,6 +778,17 @@ impl App {
                 self.thumbnail_copied(asset, clipboard);
             }
             InvAction::Thumbnail { request, item, input } => self.inventory_image_action(request, item, input),
+            InvAction::WardrobeCard { parent, name, data } => {
+                if rules::destination(&self.world.inventory, parent) {
+                    self.send(NetCommand::CreateNotecardItem {
+                        request: Uuid::new_v4(),
+                        parent,
+                        name: name.trim().chars().take(63).collect(),
+                        data,
+                        permissions: None,
+                    });
+                }
+            }
             InvAction::TeleportLandmark(_) => {}
             InvAction::Gesture(action) => self.gesture_action(action),
         }

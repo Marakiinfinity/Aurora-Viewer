@@ -326,6 +326,14 @@ pub enum Data {
     Complexity {
         seconds: u32,
     },
+    /// A Wardrobe card was read (`app/wardrobe.rs`, docs/WARDROBE.md
+    /// section 7). `applied`: the creator's card, applied at once, with
+    /// Review and Undo; otherwise a card by someone else that waits, with
+    /// Review and Ignore. Aurora's own.
+    WardrobeCard {
+        card: Uuid,
+        applied: bool,
+    },
 }
 
 /// What the question of an experience shows besides the permissions.
@@ -497,7 +505,12 @@ impl Notification {
     /// Needs an answer (stays until answered).
     pub fn interactive(&self) -> bool {
         match &self.data {
-            Data::None | Data::Presence { .. } | Data::Message { .. } | Data::Delivery { .. } | Data::RegionMessage { .. } => false,
+            Data::None
+            | Data::Presence { .. }
+            | Data::Message { .. }
+            | Data::Delivery { .. }
+            | Data::WardrobeCard { .. }
+            | Data::RegionMessage { .. } => false,
             Data::GroupNotice { .. } => self.offered_attachment().is_some(),
             _ => true,
         }
@@ -547,7 +560,8 @@ impl Notification {
             | Data::RegionMessage { .. }
             | Data::CallingCard { .. }
             | Data::Permissions { .. }
-            | Data::Delivery { .. } => false,
+            | Data::Delivery { .. }
+            | Data::WardrobeCard { .. } => false,
             Data::Inventory { object, .. } => object.is_nil(),
             // closing the notice's toast declines its attachment
             // (LLToastGroupNotifyPanel::close, IOR_DECLINE)
@@ -1242,7 +1256,7 @@ fn script_prompt(data: &Data) -> bool {
 pub(super) fn outcome_of(n: &Notification, r: &Response) -> Outcome {
     match r {
         // it is in the inventory whatever the click: shown or closed, read
-        _ if matches!(n.data, Data::Delivery { .. }) => Outcome::Read,
+        _ if matches!(n.data, Data::Delivery { .. } | Data::WardrobeCard { .. }) => Outcome::Read,
         Response::Accept if matches!(n.data, Data::Inventory { .. }) => Outcome::Kept,
         Response::Accept | Response::Button(_) | Response::SendText | Response::OpenUrl | Response::Open => Outcome::Answered,
         Response::Decline | Response::Block | Response::BlockExperience => Outcome::Declined,

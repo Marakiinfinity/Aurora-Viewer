@@ -42,6 +42,11 @@ pub(in crate::ui::inventory) enum Command {
     NewOutfit(Uuid),
     RecoverFolder(Uuid),
     FindSimilar(super::super::smart::SmartQuery),
+    /// The Wardrobe (docs/WARDROBE.md): add an item by hand, take one
+    /// out, review a Wardrobe card.
+    WardrobeAdd(Uuid),
+    WardrobeRemove(Uuid),
+    WardrobeReview(Uuid),
 }
 
 /// "Find similar" for the one selected item: the submenu offers what the
@@ -123,6 +128,53 @@ pub(super) fn similar(c: &mut Catalog, zone: &str, inv: &Inventory, id: Uuid, si
                 super::Command::Extra(Command::FindSimilar(query.unwrap_or_default())),
             );
         }
+    }
+}
+
+/// The Wardrobe's rows (Aurora's own; the Legacy Viewer has no Wardrobe):
+/// "Add to Wardrobe…" on a wearable or an object that is not in it,
+/// "Remove from Wardrobe" on one that is (the item itself stays), and
+/// "Review Wardrobe card…" on a notecard that is one.
+pub(super) fn wardrobe(c: &mut Catalog, zone: &str, inv: &Inventory, id: Uuid, single: bool, all: bool) {
+    use crate::world::wardrobe::{self, card, categories::wardrobe_asset};
+    let item = rules::original(inv, id).and_then(|id| inv.items.get(&id));
+    let wearable = item.is_some_and(|it| wardrobe_asset(it.asset_type) && !rules::library(inv, it.id) && !rules::in_type(inv, it.id, 14));
+    let target = item.map_or(id, |it| it.id);
+    let (inside, is_card) = wardrobe::with(|shared| {
+        (
+            shared.wardrobe.contains(&target),
+            item.is_some_and(|it| it.asset_type == 7 && (shared.cards.contains_key(&it.id) || card::named_card(&it.name))),
+        )
+    });
+    if (wearable && !inside) || all {
+        c.add(
+            "wardrobe-add",
+            zone,
+            "hanger-2-filled",
+            aurora_i18n::tr!("wardrobe-menu-add"),
+            single && wearable && !inside,
+            super::Command::Extra(Command::WardrobeAdd(target)),
+        );
+    }
+    if (wearable && inside) || all {
+        c.add(
+            "wardrobe-remove",
+            zone,
+            "hanger-2-filled",
+            aurora_i18n::tr!("wardrobe-menu-remove"),
+            single && inside,
+            super::Command::Extra(Command::WardrobeRemove(target)),
+        );
+    }
+    if is_card || all {
+        c.add(
+            "wardrobe-card-review",
+            zone,
+            "file-text-filled",
+            aurora_i18n::tr!("wardrobe-menu-card-review"),
+            single && is_card,
+            super::Command::Extra(Command::WardrobeReview(target)),
+        );
     }
 }
 
@@ -727,6 +779,11 @@ pub(super) fn execute(
 ) {
     match command {
         Command::FindSimilar(query) => st.find_similar(query),
+        Command::WardrobeAdd(item) => st.wardrobe.add_by_hand(inv, item),
+        Command::WardrobeRemove(item) => {
+            crate::world::wardrobe::with(|shared| shared.wardrobe.change(true, |txn| txn.remove_binding(item)));
+        }
+        Command::WardrobeReview(card) => st.wardrobe.review_card(card),
         Command::ImAll(contacts) => {
             for who in contacts {
                 crate::ui::context::request(ui.ctx(), crate::ui::context::CtxAction::Im(who));
