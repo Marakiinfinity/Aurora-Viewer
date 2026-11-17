@@ -16214,3 +16214,367 @@ phototools-director-lens = L'objectif du Réalisateur est affiché tant que sa f
 phototools-view-angle-viewfinder = Le viseur gère l'angle de vue : le vôtre revient à sa fermeture.
 ui-options-dof-show-focus-point = Afficher le point de mise au point
 ui-options-dof-show-focus-point-help = Une petite croix sur le point où l'objectif fait la mise au point : jaune quand il est libre, rouge quand il est verrouillé.
+# Wardrobe (world/wardrobe, ui/inventory/wardrobe; docs/WARDROBE.md)
+# Categories and subtypes (world/wardrobe/categories.rs)
+wardrobe-cat-tops = Hauts
+wardrobe-sub-t-shirt = T-shirt
+wardrobe-sub-shirt = Chemise
+wardrobe-sub-blouse = Chemisier
+wardrobe-sub-sweater = Pull
+wardrobe-sub-hoodie = Sweat à capuche
+wardrobe-sub-jacket = Veste
+wardrobe-sub-coat = Manteau
+wardrobe-sub-vest = Gilet
+wardrobe-sub-crop-top = Haut court
+wardrobe-sub-bra = Soutien-gorge
+wardrobe-sub-bodysuit = Body
+wardrobe-cat-bottoms = Bas
+wardrobe-sub-jeans = Jean
+wardrobe-sub-trousers = Pantalon
+wardrobe-sub-shorts = Short
+wardrobe-sub-skirt = Jupe
+wardrobe-sub-leggings = Legging
+wardrobe-sub-underwear = Sous-vêtement
+wardrobe-cat-full-body = Corps entier
+wardrobe-sub-dress = Robe
+wardrobe-sub-jumpsuit = Combinaison
+wardrobe-sub-suit = Costume
+wardrobe-sub-swimwear = Maillot de bain
+wardrobe-sub-lingerie-set = Ensemble de lingerie
+wardrobe-sub-costume = Déguisement
+wardrobe-cat-shoes = Chaussures
+wardrobe-sub-sneakers = Baskets
+wardrobe-sub-boots = Bottes
+wardrobe-sub-heels = Talons
+wardrobe-sub-sandals = Sandales
+wardrobe-sub-flats = Chaussures plates
+wardrobe-sub-socks-and-stockings = Chaussettes et bas
+wardrobe-cat-hair = Cheveux
+wardrobe-sub-short = Courts
+wardrobe-sub-long = Longs
+wardrobe-sub-updo = Chignon
+wardrobe-sub-ponytail = Queue de cheval
+wardrobe-sub-braids = Tresses
+wardrobe-sub-facial-hair = Pilosité faciale
+wardrobe-cat-heads = Têtes
+wardrobe-sub-mesh-head = Tête mesh
+wardrobe-sub-head-skin = Peau de tête
+wardrobe-sub-eyes = Yeux
+wardrobe-sub-mouth = Bouche
+wardrobe-sub-head-shape = Forme de tête
+wardrobe-sub-makeup = Maquillage
+wardrobe-sub-brows = Sourcils
+wardrobe-sub-hairbase = Base de cheveux
+wardrobe-sub-freckles-and-scars = Taches de rousseur et cicatrices
+wardrobe-cat-body-parts = Parties du corps
+wardrobe-sub-mesh-body = Corps mesh
+wardrobe-sub-hands = Mains
+wardrobe-sub-feet = Pieds
+wardrobe-sub-ears = Oreilles
+wardrobe-sub-tail = Queue
+wardrobe-sub-wings = Ailes
+wardrobe-sub-add-on = Extension
+wardrobe-sub-body-skin = Peau du corps
+wardrobe-sub-body-shape = Forme du corps
+wardrobe-sub-tattoo = Tatouage
+wardrobe-sub-nails = Ongles
+wardrobe-sub-body-hair = Pilosité
+wardrobe-sub-alpha-mask = Masque alpha
+wardrobe-cat-accessories = Accessoires
+wardrobe-sub-earrings = Boucles d'oreilles
+wardrobe-sub-necklace = Collier
+wardrobe-sub-ring = Bague
+wardrobe-sub-bracelet = Bracelet
+wardrobe-sub-piercing = Piercing
+wardrobe-sub-glasses = Lunettes
+wardrobe-sub-hat = Chapeau
+wardrobe-sub-bag = Sac
+wardrobe-sub-belt = Ceinture
+wardrobe-sub-gloves = Gants
+wardrobe-sub-scarf = Écharpe
+wardrobe-sub-watch = Montre
+wardrobe-cat-huds = HUD
+wardrobe-sub-animation-ao = Animation (AO)
+wardrobe-sub-utility = Utilitaire
+wardrobe-sub-rlva = RLVa
+wardrobe-sub-camera-and-photo = Caméra et photo
+wardrobe-sub-communication = Communication
+wardrobe-sub-shopping = Shopping
+wardrobe-sub-games = Jeux
+wardrobe-sub-other = Autre
+# Parts of a kit
+wardrobe-part-body = Corps
+wardrobe-part-head = Tête
+wardrobe-part-ears = Oreilles
+wardrobe-part-hands = Mains
+wardrobe-part-feet = Pieds
+wardrobe-part-tail = Queue
+wardrobe-part-wings = Ailes
+wardrobe-part-add-on = Extension
+wardrobe-part-other = Autre
+# Wardrobe mode, cards and creator tool (ui/inventory/wardrobe)
+wardrobe-mode-wardrobe = Garde-robe : ce que vous pouvez porter, par catégorie
+wardrobe-mode-list = Revenir à la liste de l'inventaire
+wardrobe-loading = Lecture de votre garde-robe…
+wardrobe-all = Toute la garde-robe
+wardrobe-all-of = Tout
+wardrobe-wearing-now = Porté en ce moment
+wardrobe-add = Ajouter
+wardrobe-take-off = Enlever
+wardrobe-wear-tip = Porter · Entrée
+wardrobe-more = Plus
+wardrobe-undo = Annuler
+wardrobe-new = NOUVEAU
+wardrobe-count = { $count ->
+    [one] 1 article
+   *[other] { $count } articles
+}
+wardrobe-browse-by = Parcourir par
+wardrobe-browse-category = Catégorie
+wardrobe-browse-creator = Créateur
+wardrobe-browse-set = Dossier et ensemble
+wardrobe-browse-event = Événement
+wardrobe-browse-empty = Rien à lister pour l'instant.
+wardrobe-search-everything = Rechercher dans la garde-robe
+wardrobe-search-names = Rechercher dans les noms
+wardrobe-search-stores = Rechercher créateurs et boutiques
+wardrobe-search-events = Rechercher dans les événements
+wardrobe-search-folders = Rechercher dossiers et ensembles
+wardrobe-search-descriptions = Rechercher dans les descriptions
+wardrobe-search-tip = Raccourcis : creator:, event:, body:, folder:, worn, new
+wardrobe-search-scope = Où chercher
+wardrobe-scope-everything = Tout
+wardrobe-scope-names = Noms
+wardrobe-scope-stores = Créateurs et boutiques
+wardrobe-scope-events = Événements
+wardrobe-scope-folders = Dossiers et ensembles
+wardrobe-scope-descriptions = Descriptions
+wardrobe-sort = Trier
+wardrobe-sort-added = Date d'ajout
+wardrobe-sort-last-worn = Porté récemment
+wardrobe-sort-name = Nom
+wardrobe-sort-store = Boutique
+wardrobe-sort-category = Catégorie
+wardrobe-sort-reversed = Inverser l'ordre
+wardrobe-auto-sort-tip = { $count ->
+    [one] Tri automatique : classer 1 article que le viewer sait placer seul
+   *[other] Tri automatique : classer { $count } articles que le viewer sait placer seul
+}
+wardrobe-auto-sort-none = Tri automatique : rien à classer
+wardrobe-auto-sort-button = { $count ->
+    [one] Classer 1 article
+   *[other] Classer { $count } articles
+}
+wardrobe-auto-sort-filed = { $count ->
+    [one] 1 nouvel article classé
+   *[other] { $count } nouveaux articles classés
+} · { $list }
+wardrobe-try-on = Essayer
+wardrobe-try-on-tip = Essayage : un clic sur une carte la porte aussitôt, avec Rétablir et Garder
+wardrobe-trying = Essayage · { $name }
+wardrobe-trying-tag = ESSAYAGE
+wardrobe-try-keep = Garder
+wardrobe-try-revert = Rétablir
+wardrobe-creator-open = Créer une carte de garde-robe…
+wardrobe-unsorted = { $count ->
+    [one] Ajouter les articles non classés… (1)
+   *[other] Ajouter les articles non classés… ({ $count })
+}
+wardrobe-unsorted-title = Articles non classés
+wardrobe-unsorted-body = Vêtements et objets que le viewer n'a pas su placer seul. Choisissez une catégorie, puis cliquez sur un article pour l'ajouter.
+wardrobe-pref-stacks = Empiler les copies d'un produit
+wardrobe-pref-tips = Carte de l'article au survol
+wardrobe-pref-hints = Infobulles sur les boutons et les filtres
+wardrobe-chip-worn = Porté
+wardrobe-chip-worn-tip = Porté : n'affiche que ce que vous portez
+wardrobe-chip-new = Nouveau
+wardrobe-chip-new-tip = Nouveau : n'affiche que les articles pas encore regardés
+wardrobe-chip-favorites = Favoris
+wardrobe-chip-favorites-tip = Favoris : n'affiche que les articles marqués
+wardrobe-chip-hud = Avec HUD
+wardrobe-chip-hud-tip = Avec HUD : n'affiche que les articles livrés avec un HUD
+wardrobe-created-for = Créé pour
+wardrobe-created-any = Tous
+wardrobe-created-mine = Compatible avec ce que je porte
+wardrobe-created-kit = Pour { $kit }
+wardrobe-created-tip = N'affiche que les articles faits pour ce que vous portez, ou pour tout le monde
+wardrobe-kit-wearing = { $kit } · ✓ porté · { $count }
+wardrobe-kit-count = { $kit } · { $count }
+wardrobe-more-filters = Plus de filtres
+wardrobe-filter-not-worn = Non porté
+wardrobe-filter-this-week = Nouveau cette semaine
+wardrobe-filter-store = Boutique
+wardrobe-filter-clear = Effacer les filtres
+wardrobe-fit-everyone = Convient à tous
+wardrobe-fit-fits = Compatible { $kit }
+wardrobe-fit-made-for = Pas pour ce que vous portez · fait pour { $kit }
+wardrobe-fit-needs = Nécessite { $kit }
+wardrobe-fit-unknown = Fait pour { $kit }
+wardrobe-fit-notice = Cet article a été fait pour { $kit } ; vous portez { $worn }. Il est porté quand même.
+wardrobe-fit-notice-none = Cet article a été fait pour { $kit }, que vous ne portez pas. Il est porté quand même.
+wardrobe-quick-look = Aperçu rapide
+wardrobe-quick-look-tip = Aperçu rapide · Espace
+wardrobe-quick-previous = Précédent · ←
+wardrobe-quick-next = Suivant · →
+wardrobe-hud-wear = Porter le HUD
+wardrobe-hud-detach = Détacher le HUD
+wardrobe-hud-count = { $count } HUD
+wardrobe-hud-wear-all = Porter tous les HUD
+wardrobe-hud-refused = Certains HUD n'ont pas pu être ajoutés : la limite d'attachements ou une restriction l'empêche.
+wardrobe-hud-not = Pas un HUD de cet article
+wardrobe-hud-link-body = Lier un autre HUD : un objet du même dossier, ou cherchez parmi tous les objets.
+wardrobe-plus-hud = +HUD
+wardrobe-plus-huds = +{ $count } HUD
+wardrobe-copy-original = Original
+wardrobe-copy-newest = Le plus récent
+wardrobe-menu-add = Ajouter à la garde-robe…
+wardrobe-menu-card-review = Examiner la carte de garde-robe…
+wardrobe-menu-categories = Catégories…
+wardrobe-menu-fits = Créé pour…
+wardrobe-menu-picture = Changer l'image…
+wardrobe-menu-note = Note…
+wardrobe-menu-favorite = Favori
+wardrobe-menu-same-product = Même produit que…
+wardrobe-menu-link-hud = HUD de cet article…
+wardrobe-menu-show-original = Afficher l'original dans l'inventaire
+wardrobe-menu-remove = Retirer de la garde-robe
+wardrobe-removed = { $name } a quitté la garde-robe ; l'article reste dans votre inventaire.
+wardrobe-store-marketplace = Boutique Marketplace
+wardrobe-store-visit = Visiter la boutique principale
+wardrobe-store-link = Lier une boutique…
+wardrobe-store-profile = Profil du créateur
+wardrobe-store-link-title = Lier une boutique à { $creator }
+wardrobe-store-link-body = Enregistré sur cet ordinateur uniquement. La carte de garde-robe du créateur la remplace dès qu'elle arrive.
+wardrobe-store-name = Nom de la boutique
+wardrobe-store-bad-marketplace = Une adresse Marketplace commence par https://marketplace.secondlife.com/
+wardrobe-store-bad-mainstore = Une boutique principale est un SLurl : secondlife://Région/x/y/z ou un lien maps.secondlife.com
+wardrobe-store-link-all = { $count ->
+    [one] Utilisée pour l'article de ce créateur.
+   *[other] Utilisée pour les { $count } articles de ce créateur.
+}
+wardrobe-store-unlink = Délier
+wardrobe-slots = { $filled } emplacements sur { $total }
+wardrobe-slot-empty = Rien de porté
+wardrobe-slot-several = { $name } +{ $count }
+wardrobe-empty-title = Votre garde-robe est vide
+wardrobe-empty-filter = Aucun résultat
+wardrobe-empty-body = Les articles y entrent par la carte de garde-robe d'un créateur, par le tri automatique, ou à la main depuis le menu.
+wardrobe-group-events = Événements
+wardrobe-group-stores = Boutiques et créateurs
+wardrobe-group-folders = Dossiers et ensembles
+wardrobe-group-items = Articles
+wardrobe-group-no-set = Sans ensemble
+wardrobe-card-applied = { $count ->
+    [one] 1 article ajouté à votre garde-robe · Lu dans leur carte de garde-robe. Vos propres notes restent telles quelles.
+   *[other] { $count } articles ajoutés à votre garde-robe · Lus dans leur carte de garde-robe. Vos propres notes restent telles quelles.
+}
+wardrobe-card-updated = { $count ->
+    [one] 1 article mis à jour depuis la carte de garde-robe. Vos propres notes restent telles quelles.
+   *[other] { $count } articles mis à jour depuis la carte de garde-robe. Vos propres notes restent telles quelles.
+}
+wardrobe-cards-title = { $cards } cartes de garde-robe lues
+wardrobe-cards-applied = { $count ->
+    [one] 1 article ajouté ou mis à jour dans votre garde-robe. Vos propres notes restent telles quelles.
+   *[other] { $count } articles ajoutés ou mis à jour dans votre garde-robe. Vos propres notes restent telles quelles.
+}
+wardrobe-card-replaced-store = La boutique du créateur remplace celle que vous aviez liée.
+wardrobe-card-waiting-title = Une carte de garde-robe attend
+wardrobe-card-waiting = Faite par quelqu'un d'autre que le créateur des articles : rien n'a été appliqué.
+wardrobe-card-review = Examiner
+wardrobe-card-ignore = Ignorer
+wardrobe-review-unread = Cette carte de garde-robe n'est pas encore lue. Ouvrez la note, puis réessayez.
+wardrobe-review-sub = { $count ->
+    [one] { $pack } · 1 article dans ce dossier
+   *[other] { $pack } · { $count } articles dans ce dossier
+}
+wardrobe-review-trusted = Faite par { $name }, le créateur de ces articles
+wardrobe-review-untrusted = Faite par { $name }, pas par le créateur des articles ({ $creator })
+wardrobe-review-untrusted-several = Faite par { $name } ; ces articles ont plusieurs créateurs
+wardrobe-review-store = Boutique
+wardrobe-review-store-ignored = Ignorée : seul le créateur des articles peut dire quelle boutique est la sienne.
+wardrobe-review-store-none = La carte ne nomme aucune boutique.
+wardrobe-review-mainstore = Boutique principale
+wardrobe-review-items = { $count ->
+    [one] Articles · 1 ligne
+   *[other] Articles · { $count } lignes
+}
+wardrobe-review-no-category = sans catégorie
+wardrobe-review-picture = image
+wardrobe-review-pack = Pack et événement
+wardrobe-review-stale = Votre garde-robe a déjà une version plus récente de ce pack : la carte est laissée de côté.
+wardrobe-review-skipped = { $count ->
+    [one] 1 ligne nomme un article absent de ce dossier
+   *[other] { $count } lignes nomment un article absent de ce dossier
+}
+wardrobe-review-malformed = La ligne { $line } n'a pas pu être lue
+wardrobe-review-unknown-category = Catégorie inconnue « { $written } » : l'article reste non classé
+wardrobe-review-unknown-subtype = Type inconnu « { $written } » : classé dans Autre
+wardrobe-review-too-many = { $count ->
+    [one] 1 ligne au-delà de la limite de 64 a été écartée
+   *[other] { $count } lignes au-delà de la limite de 64 ont été écartées
+}
+wardrobe-review-footnote = Vos propres notes l'emportent toujours sur la carte.
+wardrobe-review-apply = { $count ->
+    [one] Appliquer 1 groupe
+   *[other] Appliquer { $count } groupes
+}
+wardrobe-review-apply-again = { $count ->
+    [one] Appliquer à nouveau 1 groupe
+   *[other] Appliquer à nouveau { $count } groupes
+}
+wardrobe-categories-main = principale
+wardrobe-categories-make-main = Rendre principale
+wardrobe-categories-caps = Jusqu'à quatre catégories, deux types dans chacune. La principale nomme l'article dans la grille.
+wardrobe-reset-card = Revenir à la carte
+wardrobe-fits-field = Créé pour (kits séparés par des virgules ; vide : tout le monde)
+wardrobe-fits-hint = compatible : Aster, Nova
+wardrobe-kit-field = Cet article est un kit pour lequel d'autres sont créés (ses noms et tailles)
+wardrobe-kit-hint = kit : Aster, Aster Petite
+wardrobe-fits-note = La compatibilité est une indication : porter n'est jamais refusé.
+wardrobe-picture-body = Les textures du dossier de l'article. Cliquez sur l'une d'elles pour l'afficher sur la carte.
+wardrobe-picture-none = Ce dossier ne contient aucune texture.
+wardrobe-picture-own = Utiliser l'image de l'article
+wardrobe-same-body = Choisissez l'article dont { $name } est une copie : il en prend la boutique, le pack, les kits et les HUD, et garde ses propres notes.
+wardrobe-same-done = Désormais le même produit que { $name }.
+wardrobe-tip-version = v{ $version }
+wardrobe-tip-demo = Démo
+wardrobe-tip-store-yours = { $store } · défini par vous
+wardrobe-tip-no-store = { $creator } · aucune boutique liée
+wardrobe-tip-unknown-kit = Kit inconnu : aucun de vos articles ne le fournit.
+wardrobe-tip-kit = Kit : { $kits }
+wardrobe-tip-huds = { $count ->
+    [one] Livré avec un HUD
+   *[other] Livré avec { $count } HUD
+} · { $worn } porté(s)
+wardrobe-right-no-modify = Non modifiable
+wardrobe-right-no-copy = Non copiable
+wardrobe-right-no-transfer = Non transférable
+wardrobe-tip-copies = { $count } copies
+wardrobe-tip-creator = Créateur
+wardrobe-tip-pack = Pack
+wardrobe-tip-acquired = Acquis
+wardrobe-tip-folder = Dossier
+wardrobe-tip-untrusted = D'une carte qui n'a pas été écrite par le créateur.
+wardrobe-tip-shift = Maj · Détails
+wardrobe-creator-title = Carte de garde-robe
+wardrobe-creator-pick = Choisissez le dossier du produit : un dossier qui contient des articles que vous avez créés.
+wardrobe-creator-folder-hint = Rechercher dans vos dossiers
+wardrobe-creator-no-folder = Aucun dossier ne contient un vêtement ou un objet que vous avez créé.
+wardrobe-creator-change = Changer de dossier
+wardrobe-creator-logo = Logo : aucun
+wardrobe-creator-logo-set = Logo : { $name }
+wardrobe-creator-logo-none = Pas de logo
+wardrobe-creator-pack-name = Nom du pack
+wardrobe-creator-version = Version
+wardrobe-creator-items = Articles
+wardrobe-creator-no-items = Ce dossier ne contient ni vêtement ni objet.
+wardrobe-creator-is-item = Un article
+wardrobe-creator-hud-of = HUD de { $name }
+wardrobe-creator-category = Catégorie
+wardrobe-creator-note-hint = note (24 caractères)
+wardrobe-creator-preview = La carte
+wardrobe-creator-save = Enregistrer dans le dossier
+wardrobe-creator-file = Enregistrer dans un fichier…
+wardrobe-creator-copied = Carte copiée.
+wardrobe-creator-saved = La note est en cours d'enregistrement dans le dossier.
+wardrobe-creator-too-long = Trop long pour une note

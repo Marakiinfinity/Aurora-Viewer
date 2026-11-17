@@ -163,6 +163,11 @@ impl Notecard {
             .collect()
     }
 
+    /// Every item the card carries, referenced by its text or not.
+    pub fn embedded(&self) -> impl Iterator<Item = &InvItem> {
+        self.items.iter().map(|embedded| &embedded.item)
+    }
+
     pub fn attachment(&self, marker: char) -> Option<&EmbeddedItem> {
         self.items.get((marker as u32).checked_sub(FIRST_EMBEDDED_CHAR)? as usize)
     }
