@@ -96,8 +96,9 @@ struct Trying {
     /// The item was taken off again: what it replaced goes back on once
     /// the outfit settles.
     reverting: bool,
-    /// The item was seen worn, and when the try began: a try whose item
-    /// was taken off by hand, or was never worn, ends by itself.
+    /// The item was seen worn, and when the try began: taking it off by
+    /// hand reverts the try, and one whose item was never worn ends by
+    /// itself.
     seen_worn: bool,
     started: std::time::Instant,
 }
@@ -454,15 +455,22 @@ fn refresh_visible(st: &mut InventoryUi, facts: &Facts) {
 fn try_on_step(st: &mut InventoryUi, inv: &Inventory, facts: &Facts, actions: &mut Vec<InvAction>) {
     let Some(trying) = &mut st.wardrobe.trying else { return };
     if !trying.reverting {
-        // the try ends with the item: taken off from the bar, a menu or
-        // anywhere else, or never worn at all (a refusal)
         let worn = facts.worn.contains(&trying.item);
         trying.seen_worn |= worn;
-        let over = !worn && !facts.appearance_busy && (trying.seen_worn || trying.started.elapsed() > TRY_WAIT);
-        if over {
-            st.wardrobe.trying = None;
+        if worn || facts.appearance_busy {
+            return;
         }
-        return;
+        if trying.seen_worn {
+            // taken off by hand (the bar, a menu, a double click): the same
+            // as Revert, what the item replaced goes back on
+            trying.reverting = true;
+        } else if trying.started.elapsed() > TRY_WAIT {
+            // never worn at all (a refusal): nothing to put back
+            st.wardrobe.trying = None;
+            return;
+        } else {
+            return;
+        }
     }
     if facts.appearance_busy {
         return;
