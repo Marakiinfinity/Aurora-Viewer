@@ -2607,7 +2607,7 @@ pub fn show(
     }
     st.wanted_pics.extend(wanted);
     // the creators the Wardrobe names (stores, Browse by, the review sheet)
-    if !classic && (*open || st.wardrobe.creator.open) {
+    if *open || st.wardrobe.creator.open || st.wardrobe.shows_names() {
         for resident in st.wardrobe.wanted_names.iter().filter(|id| !id.is_nil()) {
             world.social.want_name(*resident);
             if let Some(name) = world.social.avatar_names.complete(resident) {

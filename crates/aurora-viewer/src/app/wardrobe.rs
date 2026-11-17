@@ -25,8 +25,10 @@ pub(crate) struct Cards {
     not_cards: HashSet<Uuid>,
     scanned: Option<(u64, u64)>,
     scanned_at: Option<Instant>,
-    /// The demo's window width, given once the window exists.
+    /// The demo's window width, given once the window exists, and the
+    /// overlay it opens once the Wardrobe is drawn.
     demo_width: Option<f32>,
+    demo_show: Option<String>,
     /// The toast of the creators' cards applied one after another: a
     /// delivery of several boxes, or the first login after cards arrived,
     /// says so once.
@@ -43,11 +45,14 @@ struct Batch {
     last: Instant,
 }
 
-/// `AURORA_DEMO_WARDROBE=cards|browse|huds|fit|creator[,thin|compact|medium|wide]`
+/// `AURORA_DEMO_WARDROBE=cards|browse|huds|fit|creator[,thin|compact|medium|wide[,quick|review|categories]]`
 /// (docs/TESTING.md): the scenario, and the width of the window.
-fn demo_scenario() -> Option<(String, Option<f32>)> {
+fn demo_scenario() -> Option<(String, Option<f32>, Option<String>)> {
     let value = std::env::var("AURORA_DEMO_WARDROBE").ok().filter(|scenario| !scenario.is_empty())?;
-    let (scenario, layout) = value.split_once(',').unwrap_or((value.as_str(), ""));
+    let mut parts = value.split(',');
+    let scenario = parts.next().unwrap_or_default();
+    let layout = parts.next().unwrap_or_default();
+    let show = parts.next().map(str::to_owned);
     let width = match layout {
         "thin" => Some(400.0),
         "compact" => Some(600.0),
@@ -55,7 +60,7 @@ fn demo_scenario() -> Option<(String, Option<f32>)> {
         "wide" => Some(1180.0),
         _ => None,
     };
-    Some((scenario.to_owned(), width))
+    Some((scenario.to_owned(), width, show))
 }
 
 /// What the app does with a card once it is read.
@@ -88,8 +93,9 @@ impl App {
         if !self.demo {
             return;
         }
-        let Some((scenario, width)) = demo_scenario() else { return };
+        let Some((scenario, width, show)) = demo_scenario() else { return };
         self.wardrobe_cards.demo_width = width;
+        self.wardrobe_cards.demo_show = show;
         let agent = self.world.agent_id;
         crate::world::inventory::demo::seed(&mut self.world.inventory, agent);
         let seeded = wardrobe::demo::seed(&mut self.world.inventory, agent, &scenario);
@@ -155,6 +161,12 @@ impl App {
             && let Some(width) = self.wardrobe_cards.demo_width.take()
         {
             ui::widgets::size_floater(&self.egui_ctx, "inventory", egui::vec2(width, 640.0));
+        }
+        // once the cards are read and the Wardrobe is drawn
+        if self.frame_count > 240
+            && let Some(show) = self.wardrobe_cards.demo_show.take()
+        {
+            self.inventory_ui.wardrobe.demo_show(&show, &self.world.inventory);
         }
         let ready = wardrobe::with(|shared| {
             shared.wardrobe.poll();

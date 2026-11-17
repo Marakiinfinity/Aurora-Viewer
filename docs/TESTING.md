@@ -6837,7 +6837,7 @@ before (`amis`, `groupes`, `repere`, `historique`…) are still accepted.
 | `AURORA_DEMO_GRID_STATUS=open\|new\|none\|error` | Help › Grid status: the grid's incidents, and its toolbar button's flash |
 | `AURORA_DEMO_CONVERSATION_LOG=open\|name\|filter\|off\|empty\|live` | The conversation log window with demo conversations |
 | `AURORA_DEMO_POSE_STAND=open\|cycle` | The toolbar's pose stand: its window and the poses it plays |
-| `AURORA_DEMO_WARDROBE=cards\|browse\|huds\|fit\|creator[,thin\|compact\|medium\|wide]` | The Wardrobe mode of the inventory window, with made-up products, stores, kits and Wardrobe cards |
+| `AURORA_DEMO_WARDROBE=cards\|browse\|huds\|fit\|creator[,thin\|compact\|medium\|wide[,quick\|review\|categories]]` | The Wardrobe mode of the inventory window, with made-up products, stores, kits and Wardrobe cards |
 
 ### Details
 
@@ -6862,7 +6862,11 @@ before (`amis`, `groupes`, `repere`, `historique`…) are still accepted.
   as the creator's own. The wand files the items of "Old favourites"
   that have a clear type or name and leaves the others under "Add unsorted
   items…". A layout after a comma (`browse,wide`) sizes the window for one
-  of the four layouts (under 420 px, to 700, to 1020, above). Nothing is read or written on disk.
+  of the four layouts (under 420 px, to 700, to 1020, above), and a third
+  word opens an overlay for a capture after frame 240: `quick` (Quick Look
+  on the first card), `review` (the review sheet of the card written by
+  someone else, with `cards`), `categories` (the categories of the first
+  card). Nothing is read or written on disk.
 - **`AURORA_DEMO_RLVA`**: `enabled` opens Preferences > RLVa and
   applies synthetic object restrictions at frame 700. `disabled` delivers
   the same commands while the global opt-in stays off; `released` enables
