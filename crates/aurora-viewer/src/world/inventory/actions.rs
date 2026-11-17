@@ -160,6 +160,27 @@ pub fn experience_logo_allowed(inv: &Inventory, asset: Uuid) -> bool {
             .any(|it| it.asset_id == asset && it.asset_type == 0 && held(inv, it) & FULL == FULL)
 }
 
+/// Whether a texture may be the logo a creator's Wardrobe card carries
+/// (docs/WARDROBE.md, section 12): one the agent made and holds with full
+/// permissions. The card is a notecard handed to every buyer, with the
+/// logo's asset id in its text: stricter than [`asset_uuid_shown`], which
+/// would also allow a full-permission texture made by someone else.
+/// Aurora's own rule; the Legacy Viewer has no Wardrobe card.
+pub fn wardrobe_logo_allowed(inv: &Inventory, item: &InvItem) -> bool {
+    item.asset_type == 0 && !item.asset_id.is_nil() && !inv.owner.is_nil() && item.creator == inv.owner && held(inv, item) & FULL == FULL
+}
+
+/// Whether the asset id of an item embedded in a Wardrobe card may be kept
+/// in the local catalogue, to bind a renamed copy of the product: only an
+/// item its embedder lets the next owner copy, modify and transfer, which
+/// is also what LLViewerTextEditor asks before it embeds one
+/// (indra/newview/llviewertexteditor.cpp, `Notecard::can_embed`). The id is
+/// never shown; this keeps it out of the file as well when a card comes
+/// from a grid that embeds anything.
+pub fn wardrobe_embedded_kept(item: &InvItem) -> bool {
+    !item.asset_id.is_nil() && item.next_owner_mask & FULL == FULL
+}
+
 /// Whether an asset UUID met outside its inventory item (a material map)
 /// may be shown: a built-in texture, or an item of the inventory holding it
 /// with full permissions, like the UUID field of LLFloaterTexturePicker

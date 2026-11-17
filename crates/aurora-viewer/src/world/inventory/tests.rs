@@ -1716,3 +1716,110 @@ mod outgoing_offers {
         assert!(inv.items.contains_key(&item));
     }
 }
+
+#[test]
+fn a_wardrobe_logo_is_a_full_permission_texture_the_agent_made() {
+    let (agent, other, group, library, asset) = (id(9991), id(9992), id(9993), id(9994), id(9995));
+    let inv = Inventory {
+        owner: agent,
+        lib_owner: library,
+        ..Default::default()
+    };
+    // the owner's own creation, full permissions
+    let mine = InvItem {
+        id: id(9996),
+        owner: agent,
+        creator: agent,
+        asset_id: asset,
+        asset_type: 0,
+        inv_type: 0,
+        owner_mask: FULL,
+        ..Default::default()
+    };
+    assert!(wardrobe_logo_allowed(&inv, &mine));
+    // no copy, no modify, no transfer
+    for missing in [COPY, MODIFY, TRANSFER] {
+        assert!(!wardrobe_logo_allowed(
+            &inv,
+            &InvItem {
+                owner_mask: FULL & !missing,
+                ..mine.clone()
+            }
+        ));
+    }
+    // a full-permission texture someone else made is not the creator's logo
+    assert!(!wardrobe_logo_allowed(
+        &inv,
+        &InvItem {
+            creator: other,
+            ..mine.clone()
+        }
+    ));
+    // group-owned: what it allows everyone, never the owner's mask
+    let shared = InvItem {
+        owner: group,
+        group_id: group,
+        group_owned: true,
+        group_mask: FULL,
+        everyone_mask: 0,
+        ..mine.clone()
+    };
+    assert!(!wardrobe_logo_allowed(&inv, &shared));
+    // someone else's item, a Library item: the everyone mask
+    assert!(!wardrobe_logo_allowed(
+        &inv,
+        &InvItem {
+            owner: other,
+            ..mine.clone()
+        }
+    ));
+    assert!(!wardrobe_logo_allowed(
+        &inv,
+        &InvItem {
+            owner: library,
+            everyone_mask: COPY,
+            ..mine.clone()
+        }
+    ));
+    // not a texture, no asset
+    assert!(!wardrobe_logo_allowed(
+        &inv,
+        &InvItem {
+            asset_type: 6,
+            ..mine.clone()
+        }
+    ));
+    assert!(!wardrobe_logo_allowed(
+        &inv,
+        &InvItem {
+            asset_id: Uuid::nil(),
+            ..mine
+        }
+    ));
+}
+
+#[test]
+fn an_embedded_items_asset_is_kept_only_when_the_next_owner_gets_everything() {
+    let item = InvItem {
+        asset_id: id(9997),
+        next_owner_mask: FULL,
+        ..Default::default()
+    };
+    assert!(wardrobe_embedded_kept(&item));
+    for missing in [COPY, MODIFY, TRANSFER] {
+        assert!(!wardrobe_embedded_kept(&InvItem {
+            next_owner_mask: FULL & !missing,
+            ..item.clone()
+        }));
+    }
+    // the owner's own mask says nothing of what the next owner may do
+    assert!(!wardrobe_embedded_kept(&InvItem {
+        owner_mask: FULL,
+        next_owner_mask: 0,
+        ..item.clone()
+    }));
+    assert!(!wardrobe_embedded_kept(&InvItem {
+        asset_id: Uuid::nil(),
+        ..item
+    }));
+}
