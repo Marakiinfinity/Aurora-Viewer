@@ -713,7 +713,7 @@ fn middle(
 fn tools_row(ui: &mut egui::Ui, p: &Palette, st: &mut InventoryUi, prefs: &mut InventoryPreferences, width: Width) {
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 4.0;
-        let buttons = if width == Width::Thin { 4.0 } else { 6.0 };
+        let buttons = if width == Width::Thin { 4.0 } else { 7.0 };
         let field = (ui.available_width() - buttons * 28.0).max(90.0);
         let hint = match st.wardrobe.filter.scope {
             Scope::Everything => aurora_i18n::tr!("wardrobe-search-everything"),
@@ -796,6 +796,11 @@ fn tools_row(ui: &mut egui::Ui, p: &Palette, st: &mut InventoryUi, prefs: &mut I
             st.wardrobe.try_on,
         ) {
             st.wardrobe.try_on = !st.wardrobe.try_on;
+        }
+        // the creator tool: a button of its own where there is room, the
+        // menu's first row everywhere
+        if width != Width::Thin && widgets::icon_button(ui, p, "file-text-filled", aurora_i18n::tr!("wardrobe-creator-open"), true) {
+            st.wardrobe.creator.open = true;
         }
         let mut stacks = prefs.wardrobe.stacks;
         let mut tips = prefs.wardrobe.tips;

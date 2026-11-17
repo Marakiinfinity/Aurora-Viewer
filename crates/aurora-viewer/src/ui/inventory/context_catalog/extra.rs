@@ -47,6 +47,8 @@ pub(in crate::ui::inventory) enum Command {
     WardrobeAdd(Uuid),
     WardrobeRemove(Uuid),
     WardrobeReview(Uuid),
+    /// The creator tool on a folder of the agent's own items.
+    WardrobeCreate(Uuid),
 }
 
 /// "Find similar" for the one selected item: the submenu offers what the
@@ -133,8 +135,9 @@ pub(super) fn similar(c: &mut Catalog, zone: &str, inv: &Inventory, id: Uuid, si
 
 /// The Wardrobe's rows (Aurora's own; the Legacy Viewer has no Wardrobe):
 /// "Add to Wardrobe…" on a wearable or an object that is not in it,
-/// "Remove from Wardrobe" on one that is (the item itself stays), and
-/// "Review Wardrobe card…" on a notecard that is one.
+/// "Remove from Wardrobe" on one that is (the item itself stays),
+/// "Review Wardrobe card…" on a notecard that is one, and "Create a
+/// Wardrobe card…" on a folder that holds an item the agent made.
 pub(super) fn wardrobe(c: &mut Catalog, zone: &str, inv: &Inventory, id: Uuid, single: bool, all: bool) {
     use crate::world::wardrobe::{self, card, categories::wardrobe_asset};
     let item = rules::original(inv, id).and_then(|id| inv.items.get(&id));
@@ -164,6 +167,27 @@ pub(super) fn wardrobe(c: &mut Catalog, zone: &str, inv: &Inventory, id: Uuid, s
             aurora_i18n::tr!("wardrobe-menu-remove"),
             single && inside,
             super::Command::Extra(Command::WardrobeRemove(target)),
+        );
+    }
+    // a folder that holds something the agent made: its Wardrobe card
+    let own_product = inv
+        .folders
+        .get(&id)
+        .filter(|f| !f.library && !rules::in_type(inv, id, 14))
+        .is_some_and(|f| {
+            f.items
+                .iter()
+                .filter_map(|item| inv.items.get(item))
+                .any(|it| wardrobe_asset(it.asset_type) && !inv.owner.is_nil() && it.creator == inv.owner)
+        });
+    if own_product || all {
+        c.add(
+            "wardrobe-card-create",
+            zone,
+            "file-text-filled",
+            aurora_i18n::tr!("wardrobe-creator-open"),
+            single && own_product,
+            super::Command::Extra(Command::WardrobeCreate(id)),
         );
     }
     if is_card || all {
@@ -784,6 +808,7 @@ pub(super) fn execute(
             crate::world::wardrobe::with(|shared| shared.wardrobe.change(true, |txn| txn.remove_binding(item)));
         }
         Command::WardrobeReview(card) => st.wardrobe.review_card(card),
+        Command::WardrobeCreate(folder) => st.wardrobe.creator.choose(inv, folder, facts.agent),
         Command::ImAll(contacts) => {
             for who in contacts {
                 crate::ui::context::request(ui.ctx(), crate::ui::context::CtxAction::Im(who));
