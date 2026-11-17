@@ -6837,9 +6837,32 @@ before (`amis`, `groupes`, `repere`, `historique`…) are still accepted.
 | `AURORA_DEMO_GRID_STATUS=open\|new\|none\|error` | Help › Grid status: the grid's incidents, and its toolbar button's flash |
 | `AURORA_DEMO_CONVERSATION_LOG=open\|name\|filter\|off\|empty\|live` | The conversation log window with demo conversations |
 | `AURORA_DEMO_POSE_STAND=open\|cycle` | The toolbar's pose stand: its window and the poses it plays |
+| `AURORA_DEMO_WARDROBE=cards\|browse\|huds\|fit\|creator[,thin\|compact\|medium\|wide]` | The Wardrobe mode of the inventory window, with made-up products, stores, kits and Wardrobe cards |
 
 ### Details
 
+- **`AURORA_DEMO_WARDROBE`**: opens Aurora's inventory window on its
+  Wardrobe mode ([docs/WARDROBE.md](WARDROBE.md)), over a "Wardrobe demo"
+  folder of made-up products: a body and a head that are kits, ears and a
+  tail, two packs of clothes with their HUDs, three copies of one tail, and
+  a folder of items without a card. `browse` starts with the creators'
+  cards applied: look at the rail and its counts, the worn check, NEW,
+  "×3" on the tail, "+HUD", the dimmed items made for a kit that is not
+  worn, Browse by, the search with `creator:` and `event:`, Quick Look
+  (Space) and Try on. `cards` leaves the cards unread: the viewer reads
+  them one by one, a toast per creator's card (Review, Undo) and one for
+  the card written by someone else (Review, Ignore), whose review sheet
+  shows the ignored store, a line that names no item and an unknown
+  category. `huds` wears one HUD of the head: its button reads "2 HUDs"
+  with one checked. `fit` takes the boots off, so that nothing made for
+  the body alone changes. `creator` opens the creator tool on a product the
+  demo's agent made (a dress, its HUD, heels, a clutch and a logo): the
+  HUD is set as the dress's, the card shows under the form, and "Save in
+  the folder" adds the notecard, which the viewer then reads and applies
+  as the creator's own. The wand files the items of "Old favourites"
+  that have a clear type or name and leaves the others under "Add unsorted
+  items…". A layout after a comma (`browse,wide`) sizes the window for one
+  of the four layouts (under 420 px, to 700, to 1020, above). Nothing is read or written on disk.
 - **`AURORA_DEMO_RLVA`**: `enabled` opens Preferences > RLVa and
   applies synthetic object restrictions at frame 700. `disabled` delivers
   the same commands while the global opt-in stays off; `released` enables
