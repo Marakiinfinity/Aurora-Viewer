@@ -1506,6 +1506,7 @@ mod tests {
             "wardrobe-add",
             "wardrobe-remove",
             "wardrobe-card-review",
+            "wardrobe-card-create",
         ] {
             assert!(ids.contains(id), "missing editor option {id}");
         }

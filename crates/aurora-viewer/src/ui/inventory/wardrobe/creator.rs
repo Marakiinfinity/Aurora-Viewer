@@ -163,6 +163,18 @@ impl State {
     }
 }
 
+/// A child laid out in exactly `rect`, clipped to it.
+fn room_ui(ui: &mut egui::Ui, rect: Rect, salt: &str) -> egui::Ui {
+    let mut child = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(rect)
+            .id_salt(salt)
+            .layout(egui::Layout::top_down(egui::Align::Min)),
+    );
+    child.set_clip_rect(rect.intersect(ui.clip_rect()));
+    child
+}
+
 /// The category of a row: a menu of the categories and their subtypes.
 fn category_menu(ui: &mut egui::Ui, p: &Palette, tags: &mut Vec<Tag>) {
     let label = match tags.first() {
@@ -241,10 +253,15 @@ pub(in super::super) fn show(
             );
             ui.add_space(6.0);
             let needle = state.search.to_lowercase();
+            // the list keeps exactly the room left: one that measures more
+            // makes a resizable window grow at every frame
+            let room = ui.available_rect_before_wrap();
+            let mut list_ui = room_ui(ui, room, "wardrobe_creator_folders_room");
+            ui.advance_cursor_after_rect(room);
             egui::ScrollArea::vertical()
                 .id_salt("wardrobe_creator_folders")
                 .auto_shrink(false)
-                .show(ui, |ui| {
+                .show(&mut list_ui, |ui| {
                     let mut folders: Vec<_> = inv
                         .folders
                         .values()
@@ -294,12 +311,20 @@ pub(in super::super) fn show(
             }
         });
         ui.add_space(6.0);
-        let room = ui.available_height() - 40.0;
+        // the form and the row of buttons under it share exactly the room
+        // left, whatever they hold
+        const FOOT: f32 = 30.0;
+        let room = ui.available_rect_before_wrap();
+        let split = (room.bottom() - FOOT).max(room.top() + 60.0);
+        let form = Rect::from_min_max(room.min, egui::pos2(room.right(), split - 6.0));
+        let foot = Rect::from_min_max(egui::pos2(room.left(), split), room.max);
+        let mut form_ui = room_ui(ui, form, "wardrobe_creator_form_room");
+        let mut foot_ui = room_ui(ui, foot, "wardrobe_creator_foot_room");
+        ui.advance_cursor_after_rect(room);
         egui::ScrollArea::vertical()
             .id_salt("wardrobe_creator_form")
-            .max_height(room)
             .auto_shrink(false)
-            .show(ui, |ui| {
+            .show(&mut form_ui, |ui| {
                 let field = |ui: &mut egui::Ui, label: &str, text: &mut String, hint: &str, width: f32| {
                     ui.vertical(|ui| {
                         ui.spacing_mut().item_spacing.y = 2.0;
@@ -462,13 +487,12 @@ pub(in super::super) fn show(
                 ui.add(
                     egui::TextEdit::multiline(&mut preview)
                         .font(egui::TextStyle::Monospace)
-                        .desired_width(f32::INFINITY)
+                        .desired_width(ui.available_width())
                         .desired_rows(8)
                         .interactive(false),
                 );
             });
-        ui.add_space(6.0);
-        ui.horizontal(|ui| {
+        foot_ui.horizontal(|ui| {
             ui.add(egui::Label::new(egui::RichText::new(&state.message).size(11.5).color(p.muted)).truncate());
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 ui.spacing_mut().item_spacing.x = 6.0;

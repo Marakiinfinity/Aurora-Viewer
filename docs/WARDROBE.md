@@ -519,7 +519,9 @@ three catalogues.
 
 ## 12. Creator tool
 
-A window for creators: choose a folder (the box), fill the store block
+A window for creators, opened from the Wardrobe's tool row or from
+"Create a Wardrobe card…" in the right-click menu of a folder that holds
+an item they made: choose a folder (the box), fill the store block
 (once per store, remembered), the pack block, and the items with their
 category, subtype, kits, HUD and note, chosen from the folder's contents:
 the folders offered are those that hold an item the creator made, a

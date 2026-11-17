@@ -128,6 +128,7 @@ impl Default for Profile {
                             "wardrobe-add",
                             "wardrobe-remove",
                             "wardrobe-card-review",
+                            "wardrobe-card-create",
                             "replace-links",
                             "separator:marketplace",
                             "marketplace-copy",
@@ -244,6 +245,7 @@ impl Profile {
             "wardrobe-add",
             "wardrobe-remove",
             "wardrobe-card-review",
+            "wardrobe-card-create",
         ] {
             let known = self.layout.placements.contains_key(id)
                 || self.layout.removed.contains(id)
@@ -321,6 +323,7 @@ impl Preferences {
                 ("wardrobe-add", "find-similar", "children:organize"),
                 ("wardrobe-remove", "wardrobe-add", "children:organize"),
                 ("wardrobe-card-review", "wardrobe-remove", "children:organize"),
+                ("wardrobe-card-create", "wardrobe-card-review", "children:organize"),
             ] {
                 let known = profile.layout.placements.contains_key(id)
                     || profile.layout.removed.contains(id)
