@@ -153,6 +153,39 @@ impl State {
         self.dialog = Some(dialogs::Dialog::categories(item, &guess));
     }
 
+    /// The review sheet is open, in whatever style the window has: its
+    /// creators' names are asked.
+    pub fn shows_names(&self) -> bool {
+        self.review.is_some() || self.pending_review.is_some()
+    }
+
+    /// `AURORA_DEMO_WARDROBE=…,…,quick|review|categories`: one of the
+    /// Wardrobe's overlays opened for a capture.
+    pub fn demo_show(&mut self, what: &str, inv: &Inventory) {
+        let first = self.visible.first().map(|(n, _)| self.model.tiles[*n].clone());
+        match (what, first) {
+            ("quick", Some(tile)) => {
+                self.selected = Some(tile.item);
+                self.open_quick_look(tile.item);
+            }
+            ("categories", Some(tile)) => self.dialog = Some(dialogs::Dialog::categories(tile.item, &tile.tags)),
+            ("review", _) => {
+                // the card written by someone else, else any card
+                let cards = wardrobe::scan::card_notecards(inv);
+                let waiting = wardrobe::with(|shared| {
+                    cards
+                        .iter()
+                        .copied()
+                        .find(|id| matches!(shared.wardrobe.account.cards.get(id), Some(wardrobe::store::CardState::Waiting)))
+                });
+                if let Some(card) = waiting.or(cards.first().copied()) {
+                    self.review_card(card);
+                }
+            }
+            _ => {}
+        }
+    }
+
     fn open_quick_look(&mut self, item: Uuid) {
         self.quick_look = Some(item);
         self.quick_opened_now = true;

@@ -67,9 +67,12 @@ pub(super) fn show(
     let modal = widgets::Modal::new(egui::Id::unique("wardrobe_review")).show(ctx, |ui| {
         ui.set_width(420.0);
         let card = &review.loaded.card;
+        // a store only its creator may claim: any other card is titled by
+        // its pack
         let title = card
             .store
             .as_ref()
+            .filter(|_| review.plan.trusted)
             .map(|s| s.name.clone())
             .filter(|n| !n.is_empty())
             .unwrap_or_else(|| review.plan.pack_name.clone());

@@ -18,7 +18,8 @@ const FOLDER_TRASH: i32 = 14;
 /// How deep and how wide a card looks under its folder.
 const SCOPE_DEPTH: usize = 3;
 const SCOPE_ITEMS: usize = 512;
-/// The index is rebuilt at most this often while the inventory loads.
+/// The index is rebuilt at most this often while the inventory changes
+/// (a login's folders arriving one after another).
 const REBUILD_EVERY: std::time::Duration = std::time::Duration::from_millis(400);
 
 fn descendants(inv: &Inventory, root: Uuid) -> HashSet<Uuid> {
@@ -126,7 +127,11 @@ impl Index {
     /// changed. Returns whether it did.
     pub fn update(&mut self, wardrobe: &Wardrobe, inv: &Inventory, worn: &HashSet<Uuid>) -> bool {
         let key = (inv.generation, wardrobe.revision, worn_key(worn));
-        if self.key == Some(key) || (self.key.is_some() && self.built.is_some_and(|at| at.elapsed() < REBUILD_EVERY)) {
+        // an edit of the Wardrobe or a change of outfit shows at once; the
+        // inventory arriving folder by folder is followed a few times a
+        // second
+        let loading = self.key.is_some_and(|(_, revision, worn)| revision == key.1 && worn == key.2);
+        if self.key == Some(key) || (loading && self.built.is_some_and(|at| at.elapsed() < REBUILD_EVERY)) {
             return false;
         }
         self.key = Some(key);

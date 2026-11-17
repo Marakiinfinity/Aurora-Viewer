@@ -141,6 +141,11 @@ fn buttons(ui: &mut egui::Ui, p: &Palette, save: &str, can_save: bool, reset: Op
     }
 }
 
+/// A menu row's label as a dialog's title: without its ellipsis.
+fn title(label: &str) -> &str {
+    label.trim_end_matches(['…', '.']).trim_end()
+}
+
 fn names(list: &str) -> Vec<String> {
     list.split(',')
         .map(str::trim)
@@ -200,7 +205,7 @@ pub(super) fn show(
         ui.set_width(380.0);
         match &mut dialog {
             Dialog::Categories { item, tags } => {
-                widgets::section_header(ui, p, "tag-filled", aurora_i18n::tr!("wardrobe-menu-categories"));
+                widgets::section_header(ui, p, "tag-filled", title(aurora_i18n::tr!("wardrobe-menu-categories")));
                 ui.label(egui::RichText::new(item_name(item)).size(12.0).color(p.muted));
                 ui.add_space(6.0);
                 egui::ScrollArea::vertical()
@@ -272,7 +277,7 @@ pub(super) fn show(
                 );
             }
             Dialog::Fits { item, fits, kit } => {
-                widgets::section_header(ui, p, "man-filled", aurora_i18n::tr!("wardrobe-menu-fits"));
+                widgets::section_header(ui, p, "man-filled", title(aurora_i18n::tr!("wardrobe-menu-fits")));
                 ui.label(egui::RichText::new(item_name(item)).size(12.0).color(p.muted));
                 ui.add_space(6.0);
                 ui.label(egui::RichText::new(aurora_i18n::tr!("wardrobe-fits-field")).size(12.0).color(p.ink));
@@ -332,7 +337,7 @@ pub(super) fn show(
                 );
             }
             Dialog::Note { item, text } => {
-                widgets::section_header(ui, p, "pencil-filled", aurora_i18n::tr!("wardrobe-menu-note"));
+                widgets::section_header(ui, p, "pencil-filled", title(aurora_i18n::tr!("wardrobe-menu-note")));
                 ui.label(egui::RichText::new(item_name(item)).size(12.0).color(p.muted));
                 ui.add_space(6.0);
                 ui.add(
@@ -349,7 +354,7 @@ pub(super) fn show(
                 );
             }
             Dialog::Picture { item } => {
-                widgets::section_header(ui, p, "photo-filled", aurora_i18n::tr!("wardrobe-menu-picture"));
+                widgets::section_header(ui, p, "photo-filled", title(aurora_i18n::tr!("wardrobe-menu-picture")));
                 ui.label(
                     egui::RichText::new(aurora_i18n::tr!("wardrobe-picture-body"))
                         .size(12.0)
@@ -423,7 +428,7 @@ pub(super) fn show(
                 }
             }
             Dialog::SameProduct { item, search } => {
-                widgets::section_header(ui, p, "copy-filled", aurora_i18n::tr!("wardrobe-menu-same-product"));
+                widgets::section_header(ui, p, "copy-filled", title(aurora_i18n::tr!("wardrobe-menu-same-product")));
                 ui.label(
                     egui::RichText::new(aurora_i18n::tr!("wardrobe-same-body", name = item_name(item)))
                         .size(12.0)
@@ -451,7 +456,7 @@ pub(super) fn show(
                 }
             }
             Dialog::LinkHud { item, search } => {
-                widgets::section_header(ui, p, "adjustments-filled", aurora_i18n::tr!("wardrobe-menu-link-hud"));
+                widgets::section_header(ui, p, "adjustments-filled", title(aurora_i18n::tr!("wardrobe-menu-link-hud")));
                 let item = *item;
                 let current = st.wardrobe.model.tile_of(&item).map(|t| t.huds.clone()).unwrap_or_default();
                 // the HUDs the rules found: each can be said not to be one

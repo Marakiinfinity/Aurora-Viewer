@@ -388,15 +388,18 @@ pub(in super::super) fn show(
                     ui.horizontal(|ui| {
                         ui.spacing_mut().item_spacing.x = 6.0;
                         widgets::checkbox(ui, p, &mut row.include, "");
-                        ui.add_sized(
-                            Vec2::new(170.0, 18.0),
-                            egui::Label::new(
-                                egui::RichText::new(&row.name)
-                                    .size(12.0)
-                                    .color(if row.include { p.ink } else { p.muted }),
-                            )
-                            .truncate(),
-                        );
+                        // a column of names, each against its left edge
+                        ui.allocate_ui_with_layout(Vec2::new(170.0, 18.0), egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                            ui.set_width(170.0);
+                            ui.add(
+                                egui::Label::new(egui::RichText::new(&row.name).size(12.0).color(if row.include {
+                                    p.ink
+                                } else {
+                                    p.muted
+                                }))
+                                .truncate(),
+                            );
+                        });
                         if !row.include {
                             return;
                         }
