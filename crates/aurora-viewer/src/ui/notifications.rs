@@ -727,6 +727,18 @@ pub(super) fn card(
                 Data::Delivery { .. } => {
                     buttons.push((aurora_i18n::tr!("ui-notifications-show-in-inventory").into(), Response::Open, true));
                 }
+                // a Wardrobe card: Review opens its sheet; Undo takes back
+                // what the creator's card changed, Ignore leaves a
+                // stranger's card aside
+                Data::WardrobeCard { applied, .. } => {
+                    buttons.push((aurora_i18n::tr!("wardrobe-card-review").into(), Response::Open, true));
+                    let other = if *applied {
+                        aurora_i18n::tr!("wardrobe-undo")
+                    } else {
+                        aurora_i18n::tr!("wardrobe-card-ignore")
+                    };
+                    buttons.push((other.into(), Response::Decline, false));
+                }
                 // Update downloads it in the update window; once downloaded,
                 // Install opens that window, which says what installing does
                 Data::Update { ready, .. } => {

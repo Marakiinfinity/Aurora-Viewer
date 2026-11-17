@@ -387,6 +387,8 @@ pub struct InventoryPreferences {
     /// Folder icon colors (`folder_colors.rs`): this viewer only, on by default.
     pub folder_colors_enabled: bool,
     pub folder_colors: std::collections::BTreeMap<Uuid, [u8; 3]>,
+    /// The Wardrobe mode of Aurora's window (`wardrobe.rs`).
+    pub wardrobe: super::wardrobe::Preferences,
 }
 impl Default for InventoryPreferences {
     fn default() -> Self {
@@ -438,6 +440,7 @@ impl Default for InventoryPreferences {
             dual_panel: false,
             folder_colors_enabled: true,
             folder_colors: Default::default(),
+            wardrobe: Default::default(),
         }
     }
 }

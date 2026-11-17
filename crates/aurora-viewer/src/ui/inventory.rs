@@ -66,6 +66,7 @@ pub(crate) mod task_selection;
 pub mod thumbnail;
 pub(crate) mod tree;
 pub(crate) mod view;
+pub mod wardrobe;
 pub use aurora::{DEMO_FOLDER_WINDOW as AURORA_DEMO_FOLDER_WINDOW, demo_place as aurora_demo};
 
 /// A demo scenario written for the Legacy Viewer's window (its tabs, its
@@ -290,6 +291,13 @@ pub enum InvAction {
     },
     /// The window's dual-panel button: two panes side by side, or one.
     DualPanel,
+    /// The creator tool saves a Wardrobe card as a notecard of the
+    /// product's folder (`wardrobe/creator.rs`).
+    WardrobeCard {
+        parent: Uuid,
+        name: String,
+        data: Vec<u8>,
+    },
 }
 
 #[derive(Default)]
@@ -745,6 +753,8 @@ pub struct InventoryUi {
     pub content_save: Option<(Uuid, Vec<u8>, String)>,
     pub close_after_save: bool,
     pub wanted_images: HashSet<Uuid>,
+    /// The Wardrobe mode of Aurora's window (`wardrobe.rs`).
+    pub wardrobe: wardrobe::State,
     pub wanted_hover_images: HashSet<Uuid>,
     /// Residents whose profile picture the give confirmation wants.
     pub wanted_pics: HashSet<Uuid>,
@@ -2585,6 +2595,15 @@ pub fn show(
         }
     }
     st.wanted_pics.extend(wanted);
+    // the creators the Wardrobe names (stores, Browse by, the review sheet)
+    if !classic && (*open || st.wardrobe.creator.open) {
+        for resident in st.wardrobe.wanted_names.iter().filter(|id| !id.is_nil()) {
+            world.social.want_name(*resident);
+            if let Some(name) = world.social.avatar_names.complete(resident) {
+                facts.names.insert(*resident, name);
+            }
+        }
+    }
     // Aurora's details of the selection name its creator and owner.
     if !classic && *open {
         for state in std::iter::once(&*st).chain(dual.as_deref()) {
@@ -2693,6 +2712,8 @@ pub fn show(
         .compact_header()
         .help(aurora_i18n::tr!("ui-inventory-right-click-item-actions-ctrl-shift-multi-select"));
     let (mut widen, mut narrow) = (false, false);
+    let mut toggle_wardrobe = false;
+    let dual_layout = dual.is_some();
     if !classic {
         // The title bar follows the width the window had last frame.
         let layout = aurora::Layout::of_window(ctx, "inventory");
@@ -2704,7 +2725,19 @@ pub fn show(
             floater = floater.title_state(dot, text);
         }
         floater = title_width_action(floater, layout, &mut widen, &mut narrow);
+        // List or Wardrobe: the Wardrobe mode shows the local index of
+        // what can be worn (docs/WARDROBE.md); the dual-panel layout
+        // keeps its two lists
+        if !dual_layout {
+            let (mode_icon, mode_tip) = if prefs.wardrobe.open {
+                ("list-filled", aurora_i18n::tr!("wardrobe-mode-list"))
+            } else {
+                ("hanger-2-filled", aurora_i18n::tr!("wardrobe-mode-wardrobe"))
+            };
+            floater = floater.action(mode_icon, mode_tip, &mut toggle_wardrobe);
+        }
     }
+    let wardrobe_open = !classic && !dual_layout && prefs.wardrobe.open;
     floater.show(ctx, p, open, |ui| {
         if let Some(dual) = dual.as_deref_mut() {
             let available = ui.available_size();
@@ -2756,6 +2789,8 @@ pub fn show(
         } else if classic {
             st.aurora = None;
             inventory_contents(ui, p, icons, inv, st, prefs, &facts, &mut actions);
+        } else if wardrobe_open {
+            wardrobe::contents(ui, p, inv, st, prefs, &facts, images, &mut actions);
         } else {
             aurora::contents(ui, p, icons, inv, st, prefs, &facts, images, &mut actions);
         }
@@ -2766,6 +2801,17 @@ pub fn show(
     if narrow {
         aurora::narrow(ctx, "inventory");
     }
+    if !classic {
+        if toggle_wardrobe || std::mem::take(&mut st.wardrobe.leave) {
+            prefs.wardrobe.open = !prefs.wardrobe.open;
+            st.preferences_dirty = true;
+        }
+        if let Some(creator) = st.wardrobe.profile.take() {
+            actions.push(InvAction::Profile(creator));
+        }
+        wardrobe::creator::show(ctx, p, inv, st, &facts, &mut actions);
+    }
+    wardrobe::overlays(ctx, p, inv, st, &facts, images);
     st.hover.show(p, inv, prefs, hover_images, &mut st.wanted_hover_images);
     st.was_open = *open && !super::widgets::floater_minimized(ctx, "inventory");
     controls::dialogs(ctx, p, st, prefs);

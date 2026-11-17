@@ -1876,6 +1876,19 @@ pub fn seed_duplicate_response(inv: &mut Inventory, agent: Uuid) {
     }
 }
 
+/// The demo wears `items`: their links join the current outfit
+/// (`AURORA_DEMO_WARDROBE`).
+pub fn demo_wear(inv: &mut Inventory, agent: Uuid, items: &[Uuid]) {
+    let Some(folder) = cof(inv) else { return };
+    let mut links = folder_links(inv, folder);
+    for item in items.iter().filter_map(|id| inv.items.get(id)) {
+        if !links.iter().any(|link| link.target == item.id) {
+            links.push(item_link(item));
+        }
+    }
+    demo_replace(inv, agent, folder, &links);
+}
+
 pub(super) fn demo_replace(inv: &mut Inventory, agent: Uuid, id: Uuid, links: &[OutfitLink]) {
     let items: Vec<_> = links
         .iter()
