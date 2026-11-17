@@ -14,7 +14,8 @@ where a behaviour follows one.
 
 This page is the specification agreed on 2026-11-15, before any code. It is
 the reference for the implementation and the human validation, and it is
-updated with the code. The mockups it describes are in the team's design
+updated with the code: where the first implementation differs from what was
+agreed, the text says what is built and section 15 lists what is left. The mockups it describes are in the team's design
 canvas ("Aurora Inventory Wardrobe mockups").
 
 ## 1. Principles
@@ -26,7 +27,7 @@ canvas ("Aurora Inventory Wardrobe mockups").
   in other viewers) is a later opt-in, not part of the first release.
 - **The user's notes always win.** Whatever a card says, a value the user
   set by hand is kept, card after card. Undo is always offered after a card
-  is applied.
+  is applied, until the end of the session.
 - **Cards are data.** A notecard is parsed against the grammar of section 5
   and nothing else: no script, no link followed, unknown keys ignored,
   values capped in length. Only the creator of the items can speak for
@@ -108,10 +109,17 @@ data folder (`wardrobe/catalogue.json`):
 
 **The account file**, per account, in the account folder
 (`wardrobe-account.json`): bindings from item ids to catalogue keys, the
-user's overrides per item (category, subtype, fits, picture, note,
-favourite), the user's store links, the HUD links and exclusions, the
-ignored cards, the chosen kit and the view settings, and the undo stack of
-the last applied cards.
+user's overrides per item (categories, fits, kit, picture, note,
+favourite), the HUD links and exclusions, the objects already worn as a
+HUD, the cards seen (applied, waiting or ignored), the user's own kits and
+the view settings (order, chosen kit). A store the user links to a creator
+is a record of the catalogue with `source: user`, so that every account of
+the PC sees it. The undo stack is kept in memory: an undo never outlives
+the session.
+
+Two viewers open on the same PC write the same catalogue: before each
+write, the records another account added since are read back and kept, and
+what this session deleted stays deleted.
 
 The demo keeps both in memory, like the saved searches.
 
@@ -120,7 +128,8 @@ The demo keeps both in memory, like the saved searches.
 Nine categories, fixed, shown in the rail in this order. Subtypes are
 fixed too. The keys are the English words below in kebab case; the
 interface shows them through `aurora_i18n::tr!` (English, French,
-Japanese). The list ships as a data file; a unit test checks that every key
+Japanese). The list is one table of the sources
+(`world/wardrobe/categories_table.rs`); a unit test checks that every key
 has its three translations.
 
 | Category | Subtypes |
@@ -275,12 +284,15 @@ Legacy Viewer source for the notecard itself: `LLNotecard`
 
 ## 7. Import, review, Auto-sort
 
-**Detection.** A notecard named or starting with `# Aurora Wardrobe` is
-recognised when its folder arrives in Received items
-(`world/received_items.rs`), when a box is unpacked, when the user opens it,
-or from the notecard's right-click menu ("Wardrobe card › Review and
-apply…, Apply all, Ignore this card"). The notecard row carries an
-"Applied" or "Review" badge in the list.
+**Detection.** A notecard whose name starts with `Aurora Wardrobe` (a
+leading `#` allowed) is read by the viewer wherever it sits in the
+inventory, outside the Trash and the Library: a delivery in Received items
+and an unpacked box are found the same way, one notecard at a time, with
+the request that opening it sends. A notecard under another name is taken
+when the user opens it and its text starts with `# Aurora Wardrobe`. A
+card whose items are not in its folder yet (a box still packed) is kept
+and looked at again when the inventory changes. The notecard's right-click
+menu offers "Review Wardrobe card…".
 
 **Trusted cards apply at once.** A toast over the world says what happened
 ("Static Bloom · 6 items added to your Wardrobe · Read from their Wardrobe
@@ -367,10 +379,12 @@ those ears for a head. Creators make one product for several kits, so an
 item names every kit it was created for and fits when any one is worn.
 
 The account's kits come from, in order: a worn or owned item that declares
-a `kit` (section 5); the alias table (`kits_known`, seeded by a data file in
-the repository with the mainstream bodies, heads and add-ons, matched by
-creator id and name pattern against worn attachments); the user, who can
-add or correct a kit by hand, its sizes included. Every kit has a **part**:
+a `kit` (section 5); the alias table (`kits_known`: the kits the cards
+declared, matched by creator id and folded name, then a short list in the
+sources of mainstream bodies and heads, each recognised by the words its
+name must hold, such as the brand and "body" or "head", and never by a
+creator id, which the repository does not keep); the user, who can say of
+any item that it is a kit, with its names and sizes ("Created for…"). Every kit has a **part**:
 body, head, ears, hands, feet, tail, wings, add-on or other.
 
 The **"Created for" chip** chooses one kit at a time: the menu lists every
@@ -400,11 +414,13 @@ outfit change, from the same worn set the smart search's `Worn` rule uses.
 
 ## 10. Wardrobe mode of the inventory window
 
-A third view toggle in the title bar: List, Wardrobe, Decoration (the last
-one greyed until it exists). Wardrobe mode uses the Aurora window's existing
-breakpoints: Thin under 420 px, Compact to 700 px, Medium to 1020 px, Wide
-above. The Legacy layout keeps its tree and gets the tooltips, the search
-scopes, the badges and the import sheet, since the rules are shared.
+A button of the title bar switches Aurora's window between its list and
+the Wardrobe; the Decoration tab brings its own choice when it exists.
+Wardrobe mode uses the Aurora window's existing breakpoints: Thin under
+420 px, Compact to 700 px, Medium to 1020 px, Wide above. The Legacy
+layout keeps its tree and shares the menu rows ("Add to Wardrobe…",
+"Remove from Wardrobe", "Review Wardrobe card…"), the review sheet and the
+dialogs, since the rules are shared.
 
 **Common parts at every width:**
 
@@ -417,10 +433,9 @@ scopes, the badges and the import sheet, since the rules are shared.
   is shown), "+HUD" or "+2 HUDs" at the bottom left, the store logo at the
   bottom right; the name under the picture, and the main category's type
   and the store under it in the All view.
-- Chips: Worn, New, Favorites, Has a HUD; "Created for"; More filters. Thin
-  opens a bottom filter sheet instead: Show (Worn, Not worn, Favorites, New
-  this week, Unopened boxes), Created for, Event, Store with counts, "Show N
-  items".
+- Chips: Worn, New, Favorites, Has a HUD; "Created for"; More filters (Not
+  worn, New this week, Event, Store with counts, Clear). Thin shows the
+  categories as a strip of pills and the same chips and menus under it.
 - Sort: Date added (default, newest first), Last worn, Name, Store,
   Category; an order toggle.
 - The selection bar at the bottom: picture, name, store logo and name, the
@@ -446,9 +461,9 @@ heading of a creator shows the Marketplace store button.
 **Search**: scopes Everything, Names, Creators & stores, Events, Folders &
 sets, Descriptions; results grouped by Events, Stores and creators, Folders
 and sets, Items, with the matched text highlighted; shortcuts `creator:`,
-`event:`, `body:`, `folder:`, `worn`, `new`. The scopes and shortcuts are
-rules of the smart search (`ui/inventory/smart.rs`), so saved searches use
-them too.
+`event:`, `body:`, `folder:`, `worn`, `new`. The scopes and shortcuts belong to the Wardrobe's own search
+(`ui/inventory/wardrobe/model.rs`); `kit:`, `store:` and `set:` are
+accepted for `body:`, `creator:` and `folder:`.
 
 **Quick Look** (Space, or the selection bar): a card over the dimmed window
 with a 256 px picture, previous and next, the store with its Marketplace
@@ -460,10 +475,11 @@ item at once and the bar shows "Trying on · in place of X" with Revert and
 Keep; the card shows TRYING ON. Revert restores the previous item through
 the ordinary outfit mutation. Off by default.
 
-**Wearing now** (Wide rail, and the avatar tab in Thin): slots head to toe,
-Hair, Head, Top, Bottom, Full body, Shoes, Body parts, Accessories, "6 of 8
-slots", an empty slot reads "Nothing worn" and opens its category, and a
-Save outfit button that uses the existing outfit saving.
+**Wearing now** (the rail of Medium and Wide, a pill in Thin) keeps what is
+worn. In Wide, with nothing selected, the pane at the right lists the
+slots head to toe (Hair, Heads, Tops, Bottoms, Full body, Shoes, Body
+parts, Accessories) with "6 of 8 slots"; an empty slot reads "Nothing worn"
+and opens its category, a filled one selects its item.
 
 **Motion**, every width, honouring the viewer's reduce-motion setting:
 
@@ -485,34 +501,36 @@ value moves.
 
 ## 11. Tooltips
 
-One tip model shared with the world's hover tips (`hover_tips.rs`,
-`ui/hover_tips.rs`), drawn in the same three forms (bubble, card, readout)
-plus the Legacy text form, so the item card and the world tip look alike.
-Four kinds:
+The item card is drawn on the tooltip surface of the inventory, which the
+theme styles like every other tooltip. Four kinds:
 
 | Kind | Content | Trigger |
 |---|---|---|
-| Item card | category and edition as the kicker, name with Worn or New, store logo and name, fit line, HUD line, rights line (No modify, No copy, No transfer), event line, footer "Shift · Details" | pointer rests on a card or a list row, 0.5 s, then instant between items, 80 ms fade |
+| Item card | categories and edition as the kicker, name with Worn or New, the note, the store, fit line, HUD line, rights line (No modify, No copy, No transfer), event line, footer "Shift · Details" | pointer rests on a card, after the viewer's tooltip delay, then at once from one card to the next |
 | Item details | the card plus Creator (store and handle, or "no store linked"), Acquired, Folder, Permissions | Shift held while hovering |
-| Hint | one line and a keycap ("Wear · Enter"), or one line explaining a chip ("Fits my body: shows only items made for the body you wear") | pointer rests on a button or chip; setting "mouse hints", off by default |
-| Refusal | icon, what was refused, why in two sentences ("Tattoo layers always stay under Undershirt layers…") | a drag or an action the rules refuse |
+| Hint | one line naming the key ("Wear · Enter"), or one line explaining a chip ("Worn: shows only what you are wearing") | pointer rests on a button or chip |
+| Notice | what a wear did that the user may not expect ("This item was made for Aster; you are wearing Nova. It is worn anyway."), or what could not be done ("Some HUDs could not be added…") | the line over the selection bar, with Undo when there is something to undo |
 
-The item card tooltip is on by default in Wardrobe mode; in List mode the
-existing inventory tooltip setting governs it. Refusals never name an asset
-id; a permissions refusal says "no copy" or "no transfer". Every string is a
-`tr!` key in the three catalogues. The keycap drawing moves from the
-movement window to `ui/widgets.rs` first, as `widgets::keycap`.
+The item card tooltip is on by default in Wardrobe mode (the window's
+"More" menu turns it off); in List mode the existing inventory tooltip
+setting governs the list's own tooltip. No line names an asset id; the
+rights say "no copy" or "no transfer". Every string is a `tr!` key in the
+three catalogues.
 
 ## 12. Creator tool
 
 A window for creators: choose a folder (the box), fill the store block
 (once per store, remembered), the pack block, and the items with their
-category, subtype, kits, HUDs, picture and note, chosen from the folder's
-contents. Export writes the card as a notecard into the folder through the
-existing notecard upload path, or as a file. Items are embedded in the
-notecard only when `asset_uuid_shown` allows it, which is the creator's own
-full-permission items; otherwise the card carries names only. The logo
-field offers the creator's own textures only.
+category, subtype, kits, HUD and note, chosen from the folder's contents:
+the folders offered are those that hold an item the creator made, a
+system layer's type and a clear name fill the category, and a HUD named
+after an item is set as that item's. The card is saved as a notecard in
+the folder through the existing notecard creation, as a file, or copied.
+The card names the items and embeds none: an embedded item is a copy
+handed to whoever holds the notecard, and the Legacy Viewer only embeds
+what the next owner may copy, modify and transfer. A card that does embed
+items is still read (section 6). The logo field offers the creator's own
+textures held with full permissions only, the one id a card carries.
 
 ## 13. Permissions and safety
 
@@ -531,11 +549,17 @@ field offers the creator's own textures only.
 
 ## 14. Demo and tests
 
-- `AURORA_DEMO_WARDROBE=<scenario>`: `cards` (a delivered folder with a
-  trusted card, one with a stranger's card, one with a skipped line),
-  `browse` (a few hundred items across stores, packs, events and kits, worn
-  set and kits as in the mockups), `huds` (the five HUD rules), `fit` (a
-  worn body and items for three kits). Documented in `docs/TESTING.md`.
+- `AURORA_DEMO_WARDROBE=<scenario>[,<layout>]`, over a folder of made-up
+  products (a body and a head that are kits, ears, a tail in three copies,
+  two packs of clothes with their HUDs, a folder of items without a card):
+  `browse` (the creators' cards applied, a store linked by hand, what is
+  worn), `cards` (the cards unread: the viewer reads them, with the toast
+  of the creators' cards and the one of a card written by someone else,
+  whose sheet shows the ignored store, a line that names no item and an
+  unknown category), `huds` (a HUD of the head worn), `fit` (the boots
+  taken off), `creator` (the creator tool on a product the demo's agent
+  made). The layout is `thin`, `compact`, `medium` or `wide`. Documented in
+  `docs/TESTING.md`.
 - Unit tests: the card grammar (every clause, caps, comments, versions),
   name folding, the trust rule, precedence, the wearable-type mapping, the
   HUD rules in order, fit states per part (body, head, ears, a size, a kit
@@ -549,7 +573,23 @@ field offers the creator's own textures only.
 - Human validation in demo mode for the visuals and on the grid for a real
   delivery with a card.
 
-## 15. Out of scope for the first release
+## 15. Out of scope for the first release, and what is left
+
+Left for later, each a ⬜ line of `TASKS.md`:
+
+- The Wardrobe's fields in the saved smart searches
+  (`ui/inventory/smart.rs`): category, subtype, kit, store, pack, event,
+  has a HUD.
+- The item card on the tip model of the world's hover tips (bubble, card,
+  readout), and refusals drawn as tips on a refused drag.
+- A card imported from a file, applied to a folder the user chooses.
+- "Applied" and "Review" badges on a card's row in the list.
+- A logo chosen among the user's textures for a store they link, and a
+  `picture` column in the creator tool.
+- "Save outfit" in Wearing now.
+- The bottom filter sheet of the Thin layout (a menu holds its choices).
+
+Out of scope:
 
 - The Decoration tab (furniture, land impact, Placed, Rez or Find it, Copy
   only, tile sizes): designed in the same canvas, deferred; its category
@@ -560,14 +600,18 @@ field offers the creator's own textures only.
 ## 16. Module plan
 
 - `world/wardrobe/`: catalogue and account files (`store.rs`), card parser
-  (`card.rs`), matching and trust (`matching.rs`), categories and the alias
-  table (`categories.rs`, `kits.rs`), HUD rules (`huds.rs`), fit
-  (`fit.rs`), Auto-sort (`sort.rs`), undo.
-- `ui/inventory/wardrobe/`: the rail, cards, chips, filter sheet, Browse by,
-  selection bar, Quick Look, Try on, Wearing now, the review sheet, the
-  Link a store dialog, the creator tool.
-- `ui/inventory/smart.rs`: the new `Field` variants (category, subtype,
-  kit, store, pack, event, has HUD) and the search scopes.
-- `hover_tips.rs`: `TipKind::Item`, hints and refusals.
-- `ARCHITECTURE.md` and `docs/TESTING.md` updated with the code; this page
-  updated where the implementation departs from it.
+  and writer (`card.rs`), matching, trust and copies (`matching.rs`),
+  categories (`categories.rs`, `categories_table.rs`), HUD rules
+  (`huds.rs`), kits and fit (`fit.rs`), Auto-sort (`sort.rs`), the index
+  computed from the inventory (`scan.rs`), the changes with their undo and
+  the shared holder (`mod.rs`), the offline scenarios (`demo.rs`).
+- `app/wardrobe.rs`: the files opened at login, the cards read one at a
+  time, the toasts and their answers.
+- `ui/inventory/wardrobe.rs` and `ui/inventory/wardrobe/`: the rail, the
+  tools, the chips, Browse by, the selection bar, Try on and Wearing now;
+  the tiles and what a filter keeps (`model.rs`), the grid (`grid.rs`),
+  the item card (`tips.rs`), the review sheet (`review.rs`), the dialogs
+  (`dialogs.rs`), Quick Look (`quick_look.rs`), the creator tool
+  (`creator.rs`).
+- `ui/inventory/context_catalog/extra.rs`: the rows of the list's menu.
+- `ARCHITECTURE.md` and `docs/TESTING.md` are updated with the code.
