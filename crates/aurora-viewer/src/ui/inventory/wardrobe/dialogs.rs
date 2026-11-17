@@ -158,7 +158,10 @@ fn names(list: &str) -> Vec<String> {
 /// A list of items to pick one from, filtered by `search`. Returns the one
 /// clicked.
 fn pick_list(ui: &mut egui::Ui, p: &Palette, search: &mut String, rows: &[(Uuid, String, String)]) -> Option<Uuid> {
-    widgets::clearable_search_box(ui, p, search, aurora_i18n::tr!("wardrobe-search-names"), ui.available_width());
+    // in a row of its own: the field centres its text in the height it is
+    // given, and a column gives it all of it
+    let width = ui.available_width();
+    ui.horizontal(|ui| widgets::clearable_search_box(ui, p, search, aurora_i18n::tr!("wardrobe-search-names"), width));
     ui.add_space(6.0);
     let needle = search.to_lowercase();
     let mut picked = None;

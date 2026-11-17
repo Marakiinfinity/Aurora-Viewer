@@ -244,13 +244,11 @@ pub(in super::super) fn show(
                     .color(p.ink),
             );
             ui.add_space(6.0);
-            widgets::clearable_search_box(
-                ui,
-                p,
-                &mut state.search,
-                aurora_i18n::tr!("wardrobe-creator-folder-hint"),
-                ui.available_width(),
-            );
+            // in a row of its own, or the field takes the window's height
+            let width = ui.available_width();
+            ui.horizontal(|ui| {
+                widgets::clearable_search_box(ui, p, &mut state.search, aurora_i18n::tr!("wardrobe-creator-folder-hint"), width)
+            });
             ui.add_space(6.0);
             let needle = state.search.to_lowercase();
             // the list keeps exactly the room left: one that measures more
