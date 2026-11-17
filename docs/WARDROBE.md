@@ -473,7 +473,8 @@ Enter, Space or Esc to close.
 **Try on**: a toggle in the tools row. When on, clicking a card wears the
 item at once and the bar shows "Trying on · in place of X" with Revert and
 Keep; the card shows TRYING ON. Revert restores the previous item through
-the ordinary outfit mutation. Off by default.
+the ordinary outfit mutation, and so does taking the tried item off by
+hand (the bar, a menu, a double click). Off by default.
 
 **Wearing now** (the rail of Medium and Wide, a pill in Thin) keeps what is
 worn. In Wide, with nothing selected, the pane at the right lists the
