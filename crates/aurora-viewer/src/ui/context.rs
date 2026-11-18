@@ -116,6 +116,9 @@ pub struct ObjectFacts {
     /// build tools can select it.
     pub edit: bool,
     pub attachment_item: Option<Uuid>,
+    /// Our attachment's inventory item is in the Wardrobe: "Show in
+    /// Wardrobe" (Aurora's own row, docs/WARDROBE.md).
+    pub in_wardrobe: bool,
     /// enable_detach: our attachment, not held by an RLVa remove lock.
     pub detach: bool,
     /// The prim the menu is about (nil in the menus of avatars and land).
@@ -348,6 +351,9 @@ pub enum CtxAction {
     /// Inventory's "Detach and Delete" confirmation.
     DetachDelete(ObjKey),
     AttachmentInventory(Uuid),
+    /// "Show in Wardrobe": the inventory window on its Wardrobe mode, the
+    /// worn item selected.
+    WardrobeShow(Uuid),
     EditAttachment(ObjKey),
     /// "Touch" / "Edit" of a worn item in the inventory or the
     /// outfit lists, by inventory item (handle_attachment_touch /

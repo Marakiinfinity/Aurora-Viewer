@@ -1504,6 +1504,7 @@ mod tests {
             "find-similar-type",
             "find-similar-folder",
             "wardrobe-add",
+            "wardrobe-show",
             "wardrobe-remove",
             "wardrobe-card-review",
             "wardrobe-card-create",

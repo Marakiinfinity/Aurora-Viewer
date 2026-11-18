@@ -5,7 +5,7 @@
 
 use super::card::{Card, Fits, compare_versions};
 use super::categories::{self, Part, wardrobe_asset};
-use super::store::{CardState, Catalogue, KnownKit, Pack, Source, Store};
+use super::store::{CardState, Catalogue, KnownKit, Pack, Product, Source, Store};
 use super::{Txn, now};
 use aurora_net::inventory::InvItem;
 use std::collections::HashMap;
@@ -479,16 +479,56 @@ pub fn rebind_by_asset(txn: &mut Txn, items: &[&InvItem]) -> usize {
 
 /// "Same product as…": `item` joins the product of `other`, its own values
 /// kept. Returns false when `other` has no product record to share.
-pub fn same_product(txn: &mut Txn, item: Uuid, other: Uuid) -> bool {
-    let Some(key) = txn.account().bindings.get(&other).and_then(|b| b.product.clone()) else {
+pub fn same_product(txn: &mut Txn, item: &InvItem, other: &InvItem) -> bool {
+    // a copy of a product has its creator: two creators are two products,
+    // and joining them would hand one store's name to the other's items
+    if item.id == other.id || item.creator != other.creator || !txn.account().bindings.contains_key(&other.id) {
         return false;
+    }
+    let key = match txn.account().bindings.get(&other.id).and_then(|b| b.product.clone()) {
+        Some(key) => key,
+        None => {
+            // no card describes `other`: a record of the user's own, so
+            // that the two (and later copies) stand as one product
+            let key = format!("{}/user/{}", other.creator, slug(&other.name));
+            if !txn.catalogue().products.contains_key(&key) {
+                let categories = txn
+                    .account()
+                    .bindings
+                    .get(&other.id)
+                    .map(|b| b.categories.clone().unwrap_or_else(|| b.sorted.clone()))
+                    .unwrap_or_default();
+                txn.set_product(Product {
+                    key: key.clone(),
+                    name: other.name.clone(),
+                    categories,
+                    ..Product::default()
+                });
+            }
+            txn.binding(other.id).product = Some(key.clone());
+            key
+        }
     };
-    let fresh = !txn.account().bindings.contains_key(&item);
-    let binding = txn.binding(item);
+    let fresh = !txn.account().bindings.contains_key(&item.id);
+    let binding = txn.binding(item.id);
     binding.product = Some(key);
     if fresh {
         binding.added = now();
         binding.new = true;
     }
     true
+}
+
+/// "Not the same product": `item` leaves the product it was joined to and
+/// keeps the categories it showed.
+pub fn separate(txn: &mut Txn, item: Uuid) {
+    let Some(key) = txn.account().bindings.get(&item).and_then(|b| b.product.clone()) else {
+        return;
+    };
+    let shown = txn.catalogue().products.get(&key).map(|p| p.categories.clone()).unwrap_or_default();
+    let binding = txn.binding(item);
+    binding.product = None;
+    if binding.categories.is_none() && binding.sorted.is_empty() {
+        binding.sorted = shown;
+    }
 }

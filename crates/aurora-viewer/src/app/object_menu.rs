@@ -280,6 +280,7 @@ impl App {
         if wearer == Some(w.agent_id) {
             let item = f.attachment_item.map(|id| linked_item(w, id));
             f.favorite = item.and_then(|id| w.inventory.items.get(&id)).map(|it| it.favorite);
+            f.in_wardrobe = item.is_some_and(|id| crate::world::wardrobe::with(|shared| shared.wardrobe.contains(&id)));
             // enable_detach and LLAttachmentDrop: an RLVa remove lock on the
             // root greys both, and @rez Drop too (the click is refused the same way)
             let root = w.objects.get(linkset_root(w, idx)).map(|o| o.key);

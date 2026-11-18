@@ -2708,12 +2708,44 @@ pub fn show(
     } else {
         egui::pos2(screen.right() - DEFAULT_SIZE.x - 20.0, 56.0)
     };
-    let mut floater = super::widgets::Floater::new("inventory", aurora_i18n::tr!("common-inventory"), default_position, default_size)
-        .compact_header()
-        .help(aurora_i18n::tr!("ui-inventory-right-click-item-actions-ctrl-shift-multi-select"));
+    let mut floater =
+        super::widgets::Floater::new("inventory", aurora_i18n::tr!("common-inventory"), default_position, default_size).compact_header();
     let (mut widen, mut narrow) = (false, false);
-    let mut toggle_wardrobe = false;
     let dual_layout = dual.is_some();
+    // "Show in Wardrobe", from a menu of the list or of the world
+    if classic || dual_layout {
+        // the Legacy style and the dual panels have no Wardrobe to show it in
+        st.wardrobe.forget_show();
+    } else if st.wardrobe.wants_to_show() && !prefs.wardrobe.open {
+        prefs.wardrobe.open = true;
+        st.preferences_dirty = true;
+    }
+    let wardrobe_open = !classic && !dual_layout && prefs.wardrobe.open;
+    // Inventory, Wardrobe, Furniture: the modes of Aurora's window
+    // (docs/WARDROBE.md); the last one waits for its tab. The dual-panel
+    // layout keeps its two lists.
+    let modes = [
+        super::widgets::TitleMode {
+            icon: "list-filled",
+            tip: aurora_i18n::tr!("wardrobe-mode-list"),
+            enabled: true,
+        },
+        super::widgets::TitleMode {
+            icon: "hanger-2-filled",
+            tip: aurora_i18n::tr!("wardrobe-mode-wardrobe"),
+            enabled: true,
+        },
+        super::widgets::TitleMode {
+            icon: "armchair",
+            tip: aurora_i18n::tr!("wardrobe-mode-furniture"),
+            enabled: false,
+        },
+    ];
+    let mut mode = usize::from(wardrobe_open);
+    // the Wardrobe's title bar holds its modes and nothing else to learn
+    if !wardrobe_open {
+        floater = floater.help(aurora_i18n::tr!("ui-inventory-right-click-item-actions-ctrl-shift-multi-select"));
+    }
     if !classic {
         // The title bar follows the width the window had last frame.
         let layout = aurora::Layout::of_window(ctx, "inventory");
@@ -2724,20 +2756,13 @@ pub fn show(
             let (dot, text) = aurora::sync_state(p, inv, st);
             floater = floater.title_state(dot, text);
         }
-        floater = title_width_action(floater, layout, &mut widen, &mut narrow);
-        // List or Wardrobe: the Wardrobe mode shows the local index of
-        // what can be worn (docs/WARDROBE.md); the dual-panel layout
-        // keeps its two lists
+        if !wardrobe_open {
+            floater = title_width_action(floater, layout, &mut widen, &mut narrow);
+        }
         if !dual_layout {
-            let (mode_icon, mode_tip) = if prefs.wardrobe.open {
-                ("list-filled", aurora_i18n::tr!("wardrobe-mode-list"))
-            } else {
-                ("hanger-2-filled", aurora_i18n::tr!("wardrobe-mode-wardrobe"))
-            };
-            floater = floater.action(mode_icon, mode_tip, &mut toggle_wardrobe);
+            floater = floater.modes(&modes, &mut mode);
         }
     }
-    let wardrobe_open = !classic && !dual_layout && prefs.wardrobe.open;
     floater.show(ctx, p, open, |ui| {
         if let Some(dual) = dual.as_deref_mut() {
             let available = ui.available_size();
@@ -2802,8 +2827,9 @@ pub fn show(
         aurora::narrow(ctx, "inventory");
     }
     if !classic {
-        if toggle_wardrobe || std::mem::take(&mut st.wardrobe.leave) {
-            prefs.wardrobe.open = !prefs.wardrobe.open;
+        let chosen = if std::mem::take(&mut st.wardrobe.leave) { false } else { mode == 1 };
+        if !dual_layout && chosen != prefs.wardrobe.open {
+            prefs.wardrobe.open = chosen;
             st.preferences_dirty = true;
         }
         if let Some(creator) = st.wardrobe.profile.take() {

@@ -244,6 +244,10 @@ pub struct Binding {
     pub picture: Option<Uuid>,
     #[serde(default)]
     pub picture_by_user: bool,
+    /// A picture the user chose from a file or the clipboard: the name of
+    /// its file in the account's picture folder. It wins over `picture`.
+    #[serde(default)]
+    pub picture_file: Option<String>,
     #[serde(default)]
     pub favorite: bool,
     /// Unix seconds: when the item joined the Wardrobe, last time worn.

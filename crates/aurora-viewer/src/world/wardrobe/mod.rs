@@ -89,6 +89,10 @@ impl Txn<'_> {
     }
 
     pub fn set_store(&mut self, store: Store) {
+        // a store is someone's: never the unknown creator's
+        if store.key.is_nil() {
+            return;
+        }
         let before = self.catalogue.stores.insert(store.key, store.clone());
         self.removed.stores.remove(&store.key);
         if !self.undo.stores.iter().any(|(k, _)| *k == store.key) {
@@ -451,7 +455,11 @@ impl Wardrobe {
     /// The store of an item: its pack's, else the one known for its
     /// creator (a card of another pack, or the user's link).
     pub fn store_of<'a>(&'a self, entry: Option<&Entry<'a>>, creator: Uuid) -> Option<&'a Store> {
-        entry.and_then(|e| e.store).or_else(|| self.catalogue.stores.get(&creator))
+        // an item whose creator is not known yet has no store of its own:
+        // no record may stand for "nobody"
+        entry
+            .and_then(|e| e.store)
+            .or_else(|| self.catalogue.stores.get(&creator).filter(|_| !creator.is_nil()))
     }
 
     /// The copies of each product in this account: product key → items.
@@ -476,7 +484,13 @@ pub struct Shared {
     pub index: scan::Index,
     /// The Wardrobe cards read this session, by notecard item.
     pub cards: HashMap<Uuid, Loaded>,
+    /// Where the account keeps the pictures the user chose; `None` in the
+    /// demo, which keeps them in memory.
+    pub pictures: Option<PathBuf>,
 }
+
+/// The account's folder of chosen pictures.
+pub const PICTURES_FOLDER: &str = "wardrobe-pictures";
 
 /// A Wardrobe card read from its notecard.
 #[derive(Clone, Debug)]
@@ -502,6 +516,11 @@ pub fn with<R>(f: impl FnOnce(&mut Shared) -> R) -> R {
 /// Opens the files of the account that logs in; replaces the Wardrobe of a
 /// previous account. `None`: in memory (the demo).
 pub fn open(files: Option<(PathBuf, PathBuf)>) {
+    // the pictures the user chose, next to the account's file
+    let pictures = files
+        .as_ref()
+        .and_then(|(_, account)| account.parent())
+        .map(|folder| folder.join(PICTURES_FOLDER));
     let wardrobe = match files {
         Some((catalogue, account)) => Wardrobe::load(catalogue, account),
         None => Wardrobe::in_memory(),
@@ -510,6 +529,7 @@ pub fn open(files: Option<(PathBuf, PathBuf)>) {
     // the previous account's storage writes what it still owes, then goes
     *guard = Some(Shared {
         wardrobe,
+        pictures,
         ..Shared::default()
     });
 }

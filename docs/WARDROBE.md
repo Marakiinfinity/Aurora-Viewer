@@ -271,6 +271,11 @@ Legacy Viewer source for the notecard itself: `LLNotecard`
 - **Precedence** for every field: the user's override, then the newest
   trusted card, then an untrusted card the user applied, then the
   heuristics (wearable type, attachment point, HUD name rules).
+- **No store for nobody.** A store belongs to a creator. An item whose
+  creator the inventory has not told yet shows no store, and no store is
+  ever kept for the unknown creator. Two items join one product only when
+  they have the same creator, so a store's name never passes to another
+  creator's items.
 - **Copies.** Every copy of an item has its own binding to the same product
   record and its own overrides, so an edited tail keeps the store, the
   kits and the HUDs of the product and can have its own category, fits,
@@ -323,10 +328,12 @@ dismissable note "Filed 5 new items · 2 Tops, 1 Shoes…" with Undo.
 or attachment, with the category submenu; the card's right-click menu
 offers Categories… (a check per category and subtype, two subtypes at
 most per category, the main ones marked, "Make main" on any other), Fits…,
-Change picture…, Favorite, Same product as… (pick another item: this one
-binds to its product record and inherits store, pack, kits and HUDs, its
-own overrides kept; also offered on an item that is not in the Wardrobe,
-for renamed copies and items received without a card), Show original in
+Change picture…, Favorite, "This is a body or a head" (section 9), Same
+product as… (pick another item of the same creator: this one joins its
+product record and takes the pack, kits and HUDs, its own overrides kept;
+when no card describes the other item, a record of the user's own is made
+so that the two show as one card), Not the same product (the item leaves
+the product it was joined to and keeps its categories), Show original in
 the inventory, Remove from Wardrobe (which removes the binding and the
 overrides, never the item).
 
@@ -335,7 +342,8 @@ overrides, never the item).
 **A creator's store** comes, in order, from the creator's trusted card;
 else from a store the user linked ("Link a store to kiko.makes": name,
 Marketplace page, a logo chosen among the user's textures or the initials,
-"Use for all N items by this creator", saved on this computer only); else
+"Use for all N items by this creator", saved on this computer only, with a
+menu of the stores already known that fills the fields in one click); else
 nothing, and the creator shows with the round profile picture, as residents
 do everywhere in Aurora, with "Link a store…" and "Profile" buttons. A
 trusted card arriving later replaces a user link and says so. Marketplace
@@ -384,7 +392,10 @@ declared, matched by creator id and folded name, then a short list in the
 sources of mainstream bodies and heads, each recognised by the words its
 name must hold, such as the brand and "body" or "head", and never by a
 creator id, which the repository does not keep); the user, who can say of
-any item that it is a kit, with its names and sizes ("Created for…"). Every kit has a **part**:
+any item that it is a kit, with its names and sizes ("Created for…"), or
+in one click with "This is a body or a head", a menu of the bodies and
+heads of that list which marks the one the item's name tells. Auto-sort
+files such an item as a Mesh body or a Mesh head. Every kit has a **part**:
 body, head, ears, hands, feet, tail, wings, add-on or other.
 
 The **"Created for" chip** chooses one kit at a time: the menu lists every
@@ -414,8 +425,11 @@ outfit change, from the same worn set the smart search's `Worn` rule uses.
 
 ## 10. Wardrobe mode of the inventory window
 
-A button of the title bar switches Aurora's window between its list and
-the Wardrobe; the Decoration tab brings its own choice when it exists.
+The title bar of Aurora's window holds its three modes as icons in one
+track: Inventory, Wardrobe, and Furniture, which is dimmed until that tab
+exists. In Wardrobe mode the bar keeps only the sync state, the modes,
+Collapse and Close. The dual-panel layout keeps its two lists and shows no
+modes.
 Wardrobe mode uses the Aurora window's existing breakpoints: Thin under
 420 px, Compact to 700 px, Medium to 1020 px, Wide above. The Legacy
 layout keeps its tree and shares the menu rows ("Add to Wardrobe…",
@@ -427,11 +441,12 @@ dialogs, since the rules are shared.
 - A category rail at the left: All wardrobe, then the nine categories, with
   a dot on a category that has new items. Wide adds "Wearing now" at the
   top.
-- Cards: a square picture (the card's picture, else the inventory image,
-  else the category icon on a neutral tile), the worn check at the top
-  left, a NEW tag at the top right (pulses once, the first time its category
-  is shown), "+HUD" or "+2 HUDs" at the bottom left, the store logo at the
-  bottom right; the name under the picture, and the main category's type
+- Cards: a square picture (the picture the user chose, else the card's,
+  else the inventory image, else the category icon on a neutral tile), the
+  worn check at the top left, a NEW tag at the top right, the store's mark
+  at the bottom left (its logo, else its initials on a colour the store
+  keeps everywhere) followed by "+HUD" or "+2 HUDs", a heart at the bottom
+  right for a favourite; the name under the picture, and the main category's type
   and the store under it in the All view.
 - Chips: Worn, New, Favorites, Has a HUD; "Created for"; More filters (Not
   worn, New this week, Event, Store with counts, Clear). Thin shows the
@@ -451,6 +466,18 @@ dialogs, since the rules are shared.
   the worn one, else the newest. Stacks are on by default; Preferences ›
   Inventory › Wardrobe turns them off, and every copy is then its own
   card. "Show original in the inventory" points at the chosen copy.
+
+**Pictures.** "Change picture…" takes a texture of the item's folder, a
+file of the PC, or a picture copied to the clipboard (a button, or
+Ctrl+V). A file or a copied picture is fitted in 512 pixels and kept as a
+PNG in the account's `wardrobe-pictures` folder: it is never uploaded and
+no texture is created on the grid. A stack shows the picture of the copy
+it acts on, else the first of its copies that has one.
+
+**Show in Wardrobe**: in the list's menu of an item that is in the
+Wardrobe, and in the world's menu of a worn object that is. The window
+turns to the Wardrobe with every filter aside, the item selected and
+scrolled into view, its stack opened when it is a copy.
 
 **Browse by** (Medium and Wide): a menu switching the sidebar between
 Creator, Category, Folder & set and Event, each entry with its count;
@@ -587,7 +614,7 @@ Left for later, each a ⬜ line of `TASKS.md`:
   readout), and refusals drawn as tips on a refused drag.
 - A card imported from a file, applied to a folder the user chooses.
 - "Applied" and "Review" badges on a card's row in the list.
-- A logo chosen among the user's textures for a store they link, and a
+- A logo for a store the user links (its initials stand for it), and a
   `picture` column in the creator tool.
 - "Save outfit" in Wearing now.
 - The bottom filter sheet of the Thin layout (a menu holds its choices).

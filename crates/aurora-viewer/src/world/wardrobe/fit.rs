@@ -65,6 +65,23 @@ const SEED: &[(&str, Part, &[&str], &[&str])] = &[
     ("Akeruka", Part::Head, &["akeruka", "head"], &["AK ADVX", "ADVX"]),
 ];
 
+/// The preset bodies and heads, for the menu that says "this item is…".
+pub fn presets() -> Vec<(&'static str, Part)> {
+    SEED.iter().map(|(name, part, _, _)| (*name, *part)).collect()
+}
+
+/// The preset an item's name tells, when it is one: "Maitreya Mesh Body -
+/// Lara V5.3" is Lara, a dress made for it is not.
+pub fn preset_of(item: &InvItem) -> Option<(&'static str, Part)> {
+    if item.asset_type != ASSET_OBJECT || is_link(item) {
+        return None;
+    }
+    seed()
+        .iter()
+        .position(|kit| recognises(kit, item))
+        .map(|at| (SEED[at].0, SEED[at].1))
+}
+
 /// The seed table as known kits (patterns are the required words, joined).
 pub fn seed() -> Vec<KnownKit> {
     SEED.iter()
@@ -321,6 +338,20 @@ mod tests {
             }
         );
         assert!(k.same("aster", "Aster") && !k.same("Sora", "Lumen"));
+    }
+
+    #[test]
+    fn a_preset_is_told_from_an_objects_name() {
+        let object = |name: &str| InvItem {
+            name: name.into(),
+            asset_type: ASSET_OBJECT,
+            ..InvItem::default()
+        };
+        assert_eq!(preset_of(&object("Maitreya Mesh Body - Lara V5.3")), Some(("Lara", Part::Body)));
+        assert_eq!(preset_of(&object("LeLUTKA.Head.Avalon.3.1")), Some(("Evo X", Part::Head)));
+        assert_eq!(preset_of(&object("Night dress (Maitreya Lara)")), None);
+        assert_eq!(preset_of(&object("Maitreya Mesh Body HUD")), None);
+        assert!(presets().iter().any(|(name, part)| *name == "Reborn" && *part == Part::Body));
     }
 
     #[test]

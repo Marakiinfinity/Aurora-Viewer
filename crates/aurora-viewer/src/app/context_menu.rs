@@ -705,6 +705,10 @@ impl App {
                 }
             }
             CtxAction::AttachmentInventory(item) => self.apply_appearance_action(crate::world::appearance::Action::ShowOriginal(item)),
+            CtxAction::WardrobeShow(item) => {
+                self.inventory_ui.wardrobe.show(item);
+                ui::widgets::open_floater(&self.egui_ctx, "inventory", &mut self.panels.inventory);
+            }
             CtxAction::Detach(key) => {
                 if let Some(source) = self
                     .world

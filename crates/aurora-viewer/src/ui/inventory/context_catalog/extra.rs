@@ -46,6 +46,7 @@ pub(in crate::ui::inventory) enum Command {
     /// out, review a Wardrobe card.
     WardrobeAdd(Uuid),
     WardrobeRemove(Uuid),
+    WardrobeShow(Uuid),
     WardrobeReview(Uuid),
     /// The creator tool on a folder of the agent's own items.
     WardrobeCreate(Uuid),
@@ -157,6 +158,16 @@ pub(super) fn wardrobe(c: &mut Catalog, zone: &str, inv: &Inventory, id: Uuid, s
             aurora_i18n::tr!("wardrobe-menu-add"),
             single && wearable && !inside,
             super::Command::Extra(Command::WardrobeAdd(target)),
+        );
+    }
+    if (wearable && inside) || all {
+        c.add(
+            "wardrobe-show",
+            zone,
+            "hanger-2-filled",
+            aurora_i18n::tr!("wardrobe-menu-show"),
+            single && inside,
+            super::Command::Extra(Command::WardrobeShow(target)),
         );
     }
     if (wearable && inside) || all {
@@ -796,6 +807,7 @@ pub(super) fn execute(
     match command {
         Command::FindSimilar(query) => st.find_similar(query),
         Command::WardrobeAdd(item) => st.wardrobe.add_by_hand(inv, item),
+        Command::WardrobeShow(item) => st.wardrobe.show(item),
         Command::WardrobeRemove(item) => {
             crate::world::wardrobe::with(|shared| shared.wardrobe.change(true, |txn| txn.remove_binding(item)));
         }

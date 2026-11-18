@@ -101,7 +101,12 @@ pub fn place(item: &InvItem, worn_hud: bool, own_hud: bool) -> Option<Tag> {
     if names_hud(&item.name) {
         return None;
     }
-    of_name(&item.name)
+    // a body or a head the viewer knows by name
+    match super::fit::preset_of(item) {
+        Some((_, super::categories::Part::Body)) => Some(Tag::new("body-parts", "mesh-body")),
+        Some((_, super::categories::Part::Head)) => Some(Tag::new("heads", "mesh-head")),
+        _ => of_name(&item.name),
+    }
 }
 
 /// The outcome, for the note "Filed 5 new items · 2 Tops, 1 Shoes…".

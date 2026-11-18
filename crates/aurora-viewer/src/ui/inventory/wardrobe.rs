@@ -13,6 +13,7 @@ pub mod creator;
 mod dialogs;
 mod grid;
 pub mod model;
+mod pictures;
 mod quick_look;
 pub mod review;
 pub mod tips;
@@ -133,6 +134,12 @@ pub struct State {
     pub wanted_names: HashSet<Uuid>,
     /// An arrow key moved the selection this frame: the grid scrolls to it.
     moved_by_key: bool,
+    /// "Show in Wardrobe": the item to show once the tiles are built, and
+    /// the grid scrolling to the selection once it did.
+    pending_show: Option<Uuid>,
+    reveal: bool,
+    /// A picture being chosen for an item, from a file or the clipboard.
+    picture_job: Option<(Uuid, pictures::Job)>,
     /// The card whose right-click menu is open, and where.
     menu: Option<(Uuid, egui::Pos2)>,
     /// The names of the copies of an open stack, by item.
@@ -147,6 +154,19 @@ impl State {
     /// Opens the review sheet of a card at the next frame.
     pub fn review_card(&mut self, card: Uuid) {
         self.pending_review = Some(card);
+    }
+
+    /// "Show in Wardrobe", from a menu of the list or of the world.
+    pub fn show(&mut self, item: Uuid) {
+        self.pending_show = Some(item);
+    }
+
+    pub fn wants_to_show(&self) -> bool {
+        self.pending_show.is_some()
+    }
+
+    pub fn forget_show(&mut self) {
+        self.pending_show = None;
     }
 
     /// "Add to Wardrobe…" from the list: the categories dialog, opened on
@@ -382,6 +402,21 @@ pub(super) fn contents(
     try_on_step(st, inv, facts, actions);
     refresh_visible(st, facts);
     // a selection that left the Wardrobe is dropped
+    // "Show in Wardrobe": every filter aside, the item selected and in sight
+    if let Some(item) = st.wardrobe.pending_show.take() {
+        match st.wardrobe.model.tile_of(&item).map(|tile| (tile.item, tile.copies.len())) {
+            Some((main, copies)) => {
+                let w = &mut st.wardrobe;
+                w.filter = Filter::default();
+                w.open_stack = (copies > 1 && main != item).then_some(main);
+                w.selected = Some(item);
+                w.reveal = true;
+                w.visible_key = None;
+                refresh_visible(st, facts);
+            }
+            None => st.wardrobe.say(aurora_i18n::tr!("wardrobe-show-missing").to_owned(), false),
+        }
+    }
     if st.wardrobe.selected.is_some_and(|id| st.wardrobe.model.tile_of(&id).is_none()) {
         st.wardrobe.selected = None;
     }
@@ -1252,6 +1287,9 @@ fn selection_bar(
         ui.spacing_mut().item_spacing.x = 8.0;
         let (rect, _) = ui.allocate_exact_size(Vec2::splat(44.0), Sense::hover());
         grid::paint_picture(ui, p, rect, &tile, images, &mut st.wanted_images, 1.0);
+        // the store's mark, in the corner of the picture
+        let mark = Rect::from_min_size(rect.right_bottom() - Vec2::splat(16.0), Vec2::splat(16.0));
+        grid::store_mark(ui, p, mark, &tile, images, &mut st.wanted_images);
         ui.vertical(|ui| {
             ui.spacing_mut().item_spacing.y = 1.0;
             ui.add_space(4.0);
@@ -1424,6 +1462,56 @@ pub(super) fn tile_menu(
     let favorite = wardrobe::with(|shared| shared.wardrobe.account.bindings.get(&item).is_some_and(|b| b.favorite));
     if menu::check(ui, p, "heart-filled", aurora_i18n::tr!("wardrobe-menu-favorite"), favorite, true) {
         wardrobe::with(|shared| shared.wardrobe.change(false, |txn| txn.binding(item).favorite = !favorite));
+    }
+    // a body or a head the fit hints know: said in one click, and found
+    // from the item's name when it tells
+    let detected = inv.items.get(&item).and_then(wardrobe::fit::preset_of);
+    let said: Vec<String> = tile.kit.clone();
+    menu::submenu(ui, p, "man-filled", aurora_i18n::tr!("wardrobe-menu-preset"), true, |ui| {
+        let mut chosen: Option<Option<(&str, categories::Part)>> = None;
+        if menu::check(ui, p, "", aurora_i18n::tr!("wardrobe-preset-none"), said.is_empty(), true) {
+            chosen = Some(None);
+        }
+        let mut part = None;
+        for (name, kind) in wardrobe::fit::presets() {
+            if part != Some(kind) {
+                part = Some(kind);
+                menu::separator(ui, p);
+                ui.label(egui::RichText::new(kind.label()).size(11.0).color(p.muted));
+            }
+            let on = said.first().is_some_and(|kit| kit.eq_ignore_ascii_case(name));
+            let label = if detected.is_some_and(|(found, _)| found == name) {
+                aurora_i18n::tr!("wardrobe-preset-detected", name = name)
+            } else {
+                name.to_owned()
+            };
+            if menu::check(ui, p, "", &label, on, true) {
+                chosen = Some(Some((name, kind)));
+            }
+        }
+        if let Some(preset) = chosen {
+            wardrobe::with(|shared| {
+                shared.wardrobe.change(true, |txn| {
+                    let binding = txn.binding(item);
+                    binding.kit = preset.map(|(name, _)| vec![name.to_owned()]);
+                    // a body is a Mesh body, a head a Mesh head, unless the
+                    // user already said otherwise
+                    if let Some((_, kind)) = preset
+                        && binding.categories.is_none()
+                    {
+                        binding.categories = Some(vec![match kind {
+                            categories::Part::Head => categories::Tag::new("heads", "mesh-head"),
+                            _ => categories::Tag::new("body-parts", "mesh-body"),
+                        }]);
+                    }
+                })
+            });
+        }
+    });
+    if tile.product.is_some() && menu::item(ui, p, "copy-filled", aurora_i18n::tr!("wardrobe-menu-separate")) {
+        wardrobe::with(|shared| shared.wardrobe.change(true, |txn| wardrobe::matching::separate(txn, item)));
+        st.wardrobe
+            .say(aurora_i18n::tr!("wardrobe-separated", name = tile.name.as_str()), true);
     }
     if menu::item(ui, p, "copy-filled", aurora_i18n::tr!("wardrobe-menu-same-product")) {
         st.wardrobe.dialog = Some(dialogs::Dialog::same_product(item));

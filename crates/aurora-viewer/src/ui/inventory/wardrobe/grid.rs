@@ -37,12 +37,19 @@ pub(in super::super) fn paint_picture(
 ) {
     let radius = ui.visuals().window_corner_radius;
     ui.painter().rect_filled(rect, radius, p.raised);
-    match tile.picture.and_then(|asset| {
-        images.get(&asset).or_else(|| {
-            wanted.insert(asset);
+    let local;
+    let texture = match &tile.picture {
+        Some(model::Picture::Asset(asset)) => images.get(asset).or_else(|| {
+            wanted.insert(*asset);
             None
-        })
-    }) {
+        }),
+        Some(model::Picture::File(name)) => {
+            local = pictures::texture(ui.ctx(), name);
+            local.as_ref()
+        }
+        None => None,
+    };
+    match texture {
         Some(texture) => widgets::square_picture(ui, rect, texture),
         None => {
             let icon = category_icon(tile.main().map_or("", |tag| tag.category()));
@@ -66,6 +73,40 @@ fn elided(ui: &egui::Ui, text: &str, size: f32, color: egui::Color32, width: f32
     job.wrap.max_rows = 1;
     job.wrap.break_anywhere = true;
     ui.painter().layout_job(job)
+}
+
+/// The mark of a store in `rect`: its logo, rendered and never printed, or
+/// its initials on a colour of the theme that the store keeps everywhere.
+pub(in super::super) fn store_mark(
+    ui: &egui::Ui,
+    p: &Palette,
+    rect: Rect,
+    tile: &Tile,
+    images: &std::collections::HashMap<Uuid, egui::TextureHandle>,
+    wanted: &mut HashSet<Uuid>,
+) {
+    let Some(store) = &tile.store else { return };
+    if let Some(logo) = tile.logo {
+        match images.get(&logo) {
+            Some(texture) => return widgets::square_picture(ui, rect, texture),
+            None => {
+                wanted.insert(logo);
+            }
+        }
+    }
+    let faces = [p.violet, p.teal, p.amber, p.rose, p.indigo, p.success];
+    let pick = store
+        .bytes()
+        .fold(0usize, |sum, byte| sum.wrapping_mul(31).wrapping_add(usize::from(byte)));
+    ui.painter()
+        .rect_filled(rect, widgets::inner_radius(ui.visuals()), faces[pick % faces.len()]);
+    ui.painter().text(
+        rect.center(),
+        egui::Align2::CENTER_CENTER,
+        widgets::initials(store),
+        egui::FontId::proportional((rect.height() * 0.5).max(7.0)),
+        p.on_accent,
+    );
 }
 
 /// A small pill over a picture: NEW, "×3", "+HUD".
@@ -194,7 +235,10 @@ pub(super) fn show(
         request_focus(ui, st);
     }
     keyboard(ui, st, inv, facts, &cells, columns, actions);
-    let reveal = st.wardrobe.selected.filter(|_| st.wardrobe.moved_by_key);
+    let reveal = st
+        .wardrobe
+        .selected
+        .filter(|_| st.wardrobe.moved_by_key || std::mem::take(&mut st.wardrobe.reveal));
     let mut clicked: Option<(Cell, bool, bool)> = None;
     let mut toggle_stack: Option<Uuid> = None;
     let mut menu_for: Option<(Uuid, egui::Pos2)> = None;
@@ -433,7 +477,12 @@ fn paint_cell(
             p.teal,
         );
     }
-    // bottom left: the item comes with HUDs
+    // bottom left: the store's mark, then what the item comes with
+    let marked = tile.store.is_some();
+    if marked {
+        let at = Rect::from_min_size(picture.left_bottom() + Vec2::new(5.0, -23.0), Vec2::splat(18.0));
+        store_mark(ui, p, at, tile, images, wanted);
+    }
     let huds = if opened { 0 } else { tile.huds.len() };
     if huds > 0 {
         let text = if huds == 1 {
@@ -444,29 +493,18 @@ fn paint_cell(
         badge(
             ui,
             &text,
-            picture.left_bottom() + Vec2::new(5.0, -5.0),
+            picture.left_bottom() + Vec2::new(if marked { 27.0 } else { 5.0 }, -5.0),
             egui::Align2::LEFT_BOTTOM,
             p.ink,
             p.bar,
         );
     }
-    // bottom right: the store's logo, rendered and never printed
-    if let Some(logo) = tile.logo {
-        match images.get(&logo) {
-            Some(texture) => {
-                let at = Rect::from_min_size(picture.right_bottom() - Vec2::splat(23.0), Vec2::splat(18.0));
-                widgets::square_picture(ui, at, texture);
-            }
-            None => {
-                wanted.insert(logo);
-            }
-        }
-    }
     if tile.favorite && !opened {
         widgets::paint_glyph(
             ui.painter(),
             "heart-filled",
-            egui::pos2(picture.left() + 12.0, picture.bottom() - if huds > 0 { 26.0 } else { 12.0 }),
+            // bottom right, clear of the store's mark and the HUD tag
+            egui::pos2(picture.right() - 12.0, picture.bottom() - 12.0),
             11.0,
             p.rose,
         );

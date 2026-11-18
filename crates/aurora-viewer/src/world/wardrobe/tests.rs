@@ -301,11 +301,28 @@ fn a_renamed_copy_binds_by_its_asset_or_by_the_users_word() {
         Some("Fox tail")
     );
     assert!(wardrobe.entry(id(21)).is_none());
-    assert!(wardrobe.change(true, |txn| matching::same_product(txn, id(21), id(3))));
+    assert!(wardrobe.change(true, |txn| matching::same_product(txn, &edited, &items[2])));
     assert_eq!(wardrobe.entry(id(21)).expect("edited").kit(), ["Fox tail".to_owned()]);
     assert_eq!(wardrobe.copies()[format!("{CREATOR}/night-market-set/fox-tail").as_str()].len(), 5);
-    // an item without a product has nothing to share
-    assert!(!wardrobe.change(true, |txn| matching::same_product(txn, id(22), id(6))));
+    // another creator's item is another product: nothing is joined, and
+    // no store passes from one creator to the other
+    let foreign = object(22, "Fox tail", STRANGER);
+    assert!(!wardrobe.change(true, |txn| matching::same_product(txn, &foreign, &items[2])));
+    assert!(!wardrobe.contains(&id(22)));
+    // an item that is not in the Wardrobe has nothing to share
+    assert!(!wardrobe.change(true, |txn| matching::same_product(txn, &edited, &items[5])));
+    // two items no card describes become one product of the user's own
+    let (first, second) = (object(30, "Plain cap", CREATOR), object(31, "Plain cap (blue)", CREATOR));
+    wardrobe.change(false, |txn| txn.binding(id(30)).sorted = vec![Tag::new("accessories", "hat")]);
+    assert!(wardrobe.change(true, |txn| matching::same_product(txn, &second, &first)));
+    let key = format!("{CREATOR}/user/plain-cap");
+    assert_eq!(wardrobe.copies()[key.as_str()].len(), 2);
+    assert_eq!(wardrobe.entry(id(31)).expect("copy").categories(), [Tag::new("accessories", "hat")]);
+    assert!(!wardrobe.catalogue.products[&key].trusted);
+    // and apart again, each keeping its category
+    wardrobe.change(true, |txn| matching::separate(txn, id(31)));
+    assert_eq!(wardrobe.entry(id(31)).and_then(|e| e.product.map(|p| p.key.clone())), None);
+    assert_eq!(wardrobe.entry(id(31)).expect("copy").categories(), [Tag::new("accessories", "hat")]);
     // removing an item from the Wardrobe removes its binding only
     wardrobe.change(true, |txn| txn.remove_binding(id(21)));
     assert!(!wardrobe.contains(&id(21)));
@@ -337,4 +354,33 @@ fn kits_come_from_the_items_that_declare_them() {
     );
     // a seeded body is known by name even when nobody owns it
     assert_eq!(none.find("Lara Petite").map(|k| (k.part, k.owned)), Some((Part::Body, false)));
+}
+
+#[test]
+fn no_store_stands_for_an_unknown_creator() {
+    let mut wardrobe = Wardrobe::in_memory();
+    wardrobe.change(false, |txn| {
+        txn.set_store(Store {
+            key: Uuid::nil(),
+            name: "Nobody".into(),
+            source: Source::User,
+            ..Store::default()
+        });
+        txn.set_store(Store {
+            key: CREATOR,
+            name: "Static Bloom".into(),
+            source: Source::User,
+            ..Store::default()
+        });
+        txn.binding(id(1)).sorted = vec![Tag::new("tops", OTHER)];
+    });
+    assert_eq!(wardrobe.catalogue.stores.len(), 1);
+    let entry = wardrobe.entry(id(1));
+    // an item whose creator is not loaded yet shows no store at all
+    assert!(wardrobe.store_of(entry.as_ref(), Uuid::nil()).is_none());
+    assert!(wardrobe.store_of(entry.as_ref(), STRANGER).is_none());
+    assert_eq!(
+        wardrobe.store_of(entry.as_ref(), CREATOR).map(|s| s.name.as_str()),
+        Some("Static Bloom")
+    );
 }
