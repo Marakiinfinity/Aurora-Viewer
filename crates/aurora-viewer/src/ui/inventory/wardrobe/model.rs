@@ -30,8 +30,12 @@ pub struct Tile {
     pub tags: Vec<Tag>,
     pub creator: Uuid,
     pub store: Option<String>,
+    /// The store's record, and whether the user made it.
+    pub store_key: Option<Uuid>,
     pub store_by_user: bool,
     pub logo: Option<Uuid>,
+    /// A logo of the PC, by its file's name (`pictures.rs`).
+    pub logo_file: Option<String>,
     pub marketplace: Option<String>,
     pub mainstore: Option<String>,
     pub pack: Option<String>,
@@ -184,6 +188,8 @@ impl Model {
                 tags: entry.categories().to_vec(),
                 creator: item.creator,
                 store: store.map(|s| s.name.clone()),
+                store_key: store.map(|s| s.key),
+                logo_file: store.and_then(|s| s.logo_file.clone()),
                 store_by_user: store.is_some_and(|s| s.source == crate::world::wardrobe::store::Source::User),
                 logo: store.and_then(|s| s.logo),
                 marketplace: store.and_then(|s| s.marketplace.clone()),
@@ -193,7 +199,7 @@ impl Model {
                 event: entry.event().map(str::to_owned),
                 version: entry.version().map(str::to_owned),
                 note: entry.note().map(str::to_owned),
-                demo: entry.demo(),
+                demo: entry.demo(crate::world::wardrobe::matching::names_demo(&item.name)),
                 trusted: entry.product.is_some_and(|p| p.trusted),
                 folder: item.parent,
                 folder_name: inv.folders.get(&item.parent).map(|f| f.info.name.clone()).unwrap_or_default(),
@@ -344,6 +350,16 @@ pub enum Created {
     Kit(String),
 }
 
+/// What the list does with the demos.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum Demos {
+    /// Shown with everything else.
+    #[default]
+    All,
+    Hide,
+    Only,
+}
+
 /// Where the search looks.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum Scope {
@@ -389,6 +405,7 @@ pub struct Filter {
     pub favorites: bool,
     pub has_hud: bool,
     pub this_week: bool,
+    pub demos: Demos,
     pub created: Created,
     pub event: Option<String>,
     pub store: Option<String>,
@@ -534,6 +551,11 @@ pub fn visible(
                 && (!filter.favorites || t.favorite)
                 && (!filter.has_hud || !t.huds.is_empty())
                 && (!filter.this_week || now - t.added <= WEEK)
+                && match filter.demos {
+                    Demos::All => true,
+                    Demos::Hide => !t.demo,
+                    Demos::Only => t.demo,
+                }
         })
         .filter(|(_, t)| match &filter.created {
             Created::Any => true,
@@ -739,6 +761,15 @@ mod tests {
             ..Filter::default()
         };
         assert_eq!(show(&m, &f, SortBy::Name), ["Boots", "Shirt"]);
+        // demos: with the rest, left out, or alone
+        let mut with_demo = model(vec![tile("Tee", "tops", "t-shirt"), tile("Tee DEMO", "tops", "t-shirt")]);
+        with_demo.tiles[1].demo = true;
+        f = Filter::default();
+        assert_eq!(show(&with_demo, &f, SortBy::Name), ["Tee", "Tee DEMO"]);
+        f.demos = Demos::Hide;
+        assert_eq!(show(&with_demo, &f, SortBy::Name), ["Tee"]);
+        f.demos = Demos::Only;
+        assert_eq!(show(&with_demo, &f, SortBy::Name), ["Tee DEMO"]);
     }
 
     #[test]

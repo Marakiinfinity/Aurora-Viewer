@@ -384,3 +384,61 @@ fn no_store_stands_for_an_unknown_creator() {
         Some("Static Bloom")
     );
 }
+
+#[test]
+fn a_store_is_linked_to_one_item_or_to_a_creator() {
+    let mut wardrobe = Wardrobe::in_memory();
+    let (shop, other) = (id(0x51), id(0x52));
+    wardrobe.change(false, |txn| {
+        for (key, name) in [(shop, "Velvet Lane"), (other, "North & Ash")] {
+            txn.set_store(Store {
+                key,
+                name: name.into(),
+                source: Source::User,
+                ..Store::default()
+            });
+        }
+        txn.binding(id(1)).sorted = vec![Tag::new("tops", OTHER)];
+        txn.binding(id(2)).sorted = vec![Tag::new("tops", OTHER)];
+        // every item of the creator, and one item on its own
+        txn.link_creator(CREATOR, Some(shop));
+        txn.binding(id(2)).store = Some(other);
+        // a link for nobody is refused
+        txn.link_creator(Uuid::nil(), Some(shop));
+    });
+    let name = |w: &Wardrobe, item: u128, creator: Uuid| w.store_of(w.entry(id(item)).as_ref(), creator).map(|s| s.name.clone());
+    assert_eq!(name(&wardrobe, 1, CREATOR).as_deref(), Some("Velvet Lane"));
+    assert_eq!(name(&wardrobe, 2, CREATOR).as_deref(), Some("North & Ash"));
+    // an item whose creator is unknown keeps the store given to it alone
+    assert_eq!(name(&wardrobe, 2, Uuid::nil()).as_deref(), Some("North & Ash"));
+    assert_eq!(name(&wardrobe, 1, Uuid::nil()), None);
+    assert_eq!(name(&wardrobe, 1, STRANGER), None);
+    // the links survive the file, and a deleted store leaves none behind
+    let again = store::Catalogue::parse(&wardrobe.catalogue.bytes().expect("bytes")).expect("catalogue");
+    assert_eq!(again.creator_stores.get(&CREATOR), Some(&shop));
+    wardrobe.change(false, |txn| {
+        txn.remove_store(shop);
+        txn.remove_store(other);
+    });
+    assert!(wardrobe.catalogue.creator_stores.is_empty());
+    assert_eq!(wardrobe.account.bindings[&id(2)].store, None);
+    assert_eq!(name(&wardrobe, 1, CREATOR), None);
+}
+
+#[test]
+fn a_demo_is_the_users_word_then_the_cards_then_the_name() {
+    assert!(matching::names_demo("Sora head DEMO") && matching::names_demo("[demo] Band tee"));
+    assert!(!matching::names_demo("Demolition boots") && !matching::names_demo("Band tee"));
+    let mut wardrobe = Wardrobe::in_memory();
+    wardrobe.change(false, |txn| txn.binding(id(1)).sorted = vec![Tag::new("tops", OTHER)]);
+    assert!(wardrobe.entry(id(1)).expect("item").demo(true));
+    assert!(!wardrobe.entry(id(1)).expect("item").demo(false));
+    wardrobe.change(false, |txn| txn.binding(id(1)).demo = Some(false));
+    assert!(!wardrobe.entry(id(1)).expect("item").demo(true));
+    wardrobe.change(false, |txn| {
+        let binding = txn.binding(id(1));
+        binding.demo = None;
+        binding.part = Some(Part::Ears);
+    });
+    assert_eq!(wardrobe.entry(id(1)).expect("item").part(), Part::Ears);
+}

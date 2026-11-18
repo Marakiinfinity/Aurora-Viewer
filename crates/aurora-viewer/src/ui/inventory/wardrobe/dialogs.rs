@@ -5,8 +5,7 @@
 //! wins over any card and stays on this computer.
 
 use super::*;
-use crate::world::wardrobe::categories::{MAX_CATEGORIES, MAX_SUBTYPES, OTHER, Tag};
-use crate::world::wardrobe::store::{Source, Store};
+use crate::world::wardrobe::categories::{MAX_CATEGORIES, MAX_SUBTYPES, OTHER, Part, Tag};
 use crate::world::wardrobe::{card, matching};
 
 pub(super) enum Dialog {
@@ -17,7 +16,14 @@ pub(super) enum Dialog {
     Fits {
         item: Uuid,
         fits: String,
-        kit: String,
+    },
+    /// "Register as body, head or body part…": the item is a kit others are
+    /// created for.
+    Register {
+        item: Uuid,
+        part: Part,
+        name: String,
+        sizes: String,
     },
     Note {
         item: Uuid,
@@ -34,12 +40,6 @@ pub(super) enum Dialog {
         item: Uuid,
         search: String,
     },
-    LinkStore {
-        creator: Uuid,
-        name: String,
-        marketplace: String,
-        mainstore: String,
-    },
     Unsorted {
         search: String,
         category: usize,
@@ -51,11 +51,25 @@ impl Dialog {
         Dialog::Categories { item, tags: tags.to_vec() }
     }
 
-    pub(super) fn fits(item: Uuid, fits: &[String], kit: &[String]) -> Self {
+    pub(super) fn fits(item: Uuid, fits: &[String]) -> Self {
         Dialog::Fits {
             item,
             fits: fits.join(", "),
-            kit: kit.join(", "),
+        }
+    }
+
+    /// Opened on what the item already says, else on what its name tells.
+    pub(super) fn register(item: Uuid, part: Part, kit: &[String], detected: Option<(&str, Part)>) -> Self {
+        let (name, part) = match (kit.first(), detected) {
+            (Some(name), _) => (name.clone(), part),
+            (None, Some((name, part))) => (name.to_owned(), part),
+            (None, None) => (String::new(), if part == Part::Other { Part::Body } else { part }),
+        };
+        Dialog::Register {
+            item,
+            part,
+            name,
+            sizes: kit.iter().skip(1).cloned().collect::<Vec<_>>().join(", "),
         }
     }
 
@@ -81,16 +95,6 @@ impl Dialog {
         Dialog::LinkHud {
             item,
             search: String::new(),
-        }
-    }
-
-    pub(super) fn link_store(creator: Uuid) -> Self {
-        let known = wardrobe::with(|shared| shared.wardrobe.catalogue.stores.get(&creator).cloned());
-        Dialog::LinkStore {
-            creator,
-            name: known.as_ref().map(|s| s.name.clone()).unwrap_or_default(),
-            marketplace: known.as_ref().and_then(|s| s.marketplace.clone()).unwrap_or_default(),
-            mainstore: known.and_then(|s| s.mainstore).unwrap_or_default(),
         }
     }
 
@@ -198,26 +202,8 @@ pub(super) fn show(
     p: &Palette,
     inv: &Inventory,
     st: &mut InventoryUi,
-    facts: &Facts,
     images: &std::collections::HashMap<Uuid, egui::TextureHandle>,
 ) {
-    // a picture chosen from a file or the clipboard arrived
-    if let Some((item, job)) = &st.wardrobe.picture_job
-        && let Ok(result) = job.try_recv()
-    {
-        let item = *item;
-        st.wardrobe.picture_job = None;
-        match result {
-            Ok(Some(file)) => {
-                set_picture(item, None, Some(file));
-                if matches!(st.wardrobe.dialog, Some(Dialog::Picture { .. })) {
-                    st.wardrobe.dialog = None;
-                }
-            }
-            Ok(None) => {}
-            Err(reason) => st.wardrobe.say(reason, false),
-        }
-    }
     let Some(mut dialog) = st.wardrobe.dialog.take() else { return };
     let mut answer = Answer::Open;
     let item_name = |id: &Uuid| inv.items.get(id).map_or(String::new(), |it| it.name.clone());
@@ -272,10 +258,16 @@ pub(super) fn show(
                                 for subtype in category.subtypes.iter().filter(|s| s.key != OTHER) {
                                     let chosen = tag.1.iter().any(|s| s == subtype.key);
                                     if widgets::filter_pill(ui, p, "", aurora_i18n::text(subtype.label), chosen).clicked() {
+                                        // a click chooses this type in place of
+                                        // the one set; with Ctrl or Shift it
+                                        // joins it, up to two
+                                        let adding = ui.input(|i| i.modifiers.command || i.modifiers.shift);
                                         if chosen {
                                             tag.1.retain(|s| s != subtype.key);
-                                        } else if tag.1.len() < MAX_SUBTYPES {
+                                        } else if adding && tag.1.len() < MAX_SUBTYPES {
                                             tag.1.push(subtype.key.to_owned());
+                                        } else {
+                                            tag.1 = vec![subtype.key.to_owned()];
                                         }
                                     }
                                 }
@@ -296,7 +288,7 @@ pub(super) fn show(
                     Some(aurora_i18n::tr!("wardrobe-reset-card")),
                 );
             }
-            Dialog::Fits { item, fits, kit } => {
+            Dialog::Fits { item, fits } => {
                 widgets::section_header(ui, p, "man-filled", title(aurora_i18n::tr!("wardrobe-menu-fits")));
                 ui.label(egui::RichText::new(item_name(item)).size(12.0).color(p.muted));
                 ui.add_space(6.0);
@@ -335,13 +327,6 @@ pub(super) fn show(
                         }
                     });
                 }
-                ui.add_space(8.0);
-                ui.label(egui::RichText::new(aurora_i18n::tr!("wardrobe-kit-field")).size(12.0).color(p.ink));
-                ui.add(
-                    egui::TextEdit::singleline(kit)
-                        .desired_width(f32::INFINITY)
-                        .hint_text(aurora_i18n::tr!("wardrobe-kit-hint")),
-                );
                 ui.add_space(4.0);
                 ui.label(
                     egui::RichText::new(aurora_i18n::tr!("wardrobe-fits-note"))
@@ -354,6 +339,87 @@ pub(super) fn show(
                     aurora_i18n::tr!("common-save"),
                     true,
                     Some(aurora_i18n::tr!("wardrobe-reset-card")),
+                );
+            }
+            Dialog::Register { item, part, name, sizes } => {
+                widgets::section_header(ui, p, "man-filled", title(aurora_i18n::tr!("wardrobe-menu-register")));
+                ui.label(egui::RichText::new(item_name(item)).size(12.0).color(p.muted));
+                ui.add_space(4.0);
+                ui.label(
+                    egui::RichText::new(aurora_i18n::tr!("wardrobe-register-body"))
+                        .size(12.0)
+                        .color(p.muted),
+                );
+                ui.add_space(6.0);
+                ui.horizontal_wrapped(|ui| {
+                    ui.spacing_mut().item_spacing = Vec2::new(4.0, 4.0);
+                    for kind in [
+                        Part::Body,
+                        Part::Head,
+                        Part::Ears,
+                        Part::Hands,
+                        Part::Feet,
+                        Part::Tail,
+                        Part::Wings,
+                        Part::AddOn,
+                        Part::Other,
+                    ] {
+                        if widgets::filter_pill(ui, p, "", kind.label(), *part == kind).clicked() {
+                            *part = kind;
+                        }
+                    }
+                });
+                ui.add_space(8.0);
+                ui.label(
+                    egui::RichText::new(aurora_i18n::tr!("wardrobe-register-name"))
+                        .size(12.0)
+                        .color(p.ink),
+                );
+                ui.add(
+                    egui::TextEdit::singleline(name)
+                        .desired_width(f32::INFINITY)
+                        .hint_text(aurora_i18n::tr!("wardrobe-register-name-hint"))
+                        .char_limit(64),
+                );
+                // the bodies and heads the viewer knows, a click away
+                let detected = inv.items.get(item).and_then(wardrobe::fit::preset_of);
+                let presets: Vec<(&str, Part)> = wardrobe::fit::presets().into_iter().filter(|(_, kind)| kind == part).collect();
+                if !presets.is_empty() {
+                    ui.add_space(4.0);
+                    ui.horizontal_wrapped(|ui| {
+                        ui.spacing_mut().item_spacing = Vec2::new(4.0, 4.0);
+                        for (preset, _) in presets {
+                            let found = detected.is_some_and(|(known, _)| known == preset);
+                            let on = name.trim().eq_ignore_ascii_case(preset);
+                            if widgets::filter_pill(ui, p, if found { "check" } else { "" }, preset, on).clicked() {
+                                *name = preset.to_owned();
+                            }
+                        }
+                    });
+                }
+                ui.add_space(8.0);
+                ui.label(
+                    egui::RichText::new(aurora_i18n::tr!("wardrobe-register-sizes"))
+                        .size(12.0)
+                        .color(p.ink),
+                );
+                ui.add(
+                    egui::TextEdit::singleline(sizes)
+                        .desired_width(f32::INFINITY)
+                        .hint_text(aurora_i18n::tr!("wardrobe-register-sizes-hint")),
+                );
+                ui.add_space(4.0);
+                ui.label(
+                    egui::RichText::new(aurora_i18n::tr!("wardrobe-register-note"))
+                        .size(11.0)
+                        .color(p.muted),
+                );
+                answer = buttons(
+                    ui,
+                    p,
+                    aurora_i18n::tr!("common-save"),
+                    !name.trim().is_empty(),
+                    Some(aurora_i18n::tr!("wardrobe-register-undo")),
                 );
             }
             Dialog::Note { item, text } => {
@@ -441,7 +507,7 @@ pub(super) fn show(
                         let label = aurora_i18n::text(key);
                         let size = Vec2::new(widgets::action_button_fit(ui, icon, label), 26.0);
                         if widgets::action_button_if(ui, p, icon, label, widgets::ActionKind::Flat, size, !working).clicked() {
-                            st.wardrobe.picture_job = Some((*item, pictures::choose(ui.ctx(), from)));
+                            st.wardrobe.picture_job = Some((framing::Target::Item(*item), pictures::choose(ui.ctx(), from)));
                         }
                     }
                     if widgets::flat_button(ui, p, aurora_i18n::tr!("wardrobe-picture-own")).clicked() {
@@ -463,7 +529,7 @@ pub(super) fn show(
                 }
                 // Ctrl+V pastes a copied picture
                 if !working && ui.input(|i| i.events.iter().any(|event| matches!(event, egui::Event::Paste(_)))) {
-                    st.wardrobe.picture_job = Some((*item, pictures::choose(ui.ctx(), pictures::From::Clipboard)));
+                    st.wardrobe.picture_job = Some((framing::Target::Item(*item), pictures::choose(ui.ctx(), pictures::From::Clipboard)));
                 }
                 if let Some(picture) = chosen {
                     let item = *item;
@@ -580,108 +646,6 @@ pub(super) fn show(
                 }
                 answer = buttons(ui, p, aurora_i18n::tr!("common-close"), true, None);
             }
-            Dialog::LinkStore {
-                creator,
-                name,
-                marketplace,
-                mainstore,
-            } => {
-                let who = facts.names.get(creator).map_or("…", String::as_str);
-                widgets::section_header(
-                    ui,
-                    p,
-                    "building-store",
-                    &aurora_i18n::tr!("wardrobe-store-link-title", creator = who),
-                );
-                ui.label(
-                    egui::RichText::new(aurora_i18n::tr!("wardrobe-store-link-body"))
-                        .size(12.0)
-                        .color(p.muted),
-                );
-                ui.add_space(6.0);
-                // a store already known: its name and links, in one click
-                let known: Vec<Store> = wardrobe::with(|shared| {
-                    let mut stores: Vec<Store> = shared
-                        .wardrobe
-                        .catalogue
-                        .stores
-                        .values()
-                        .filter(|s| s.key != *creator)
-                        .cloned()
-                        .collect();
-                    stores.sort_by_key(|s| s.name.to_lowercase());
-                    stores.dedup_by(|a, b| a.name.eq_ignore_ascii_case(&b.name));
-                    stores
-                });
-                if !known.is_empty() {
-                    let button =
-                        egui::Button::new(egui::RichText::new(format!("{}  ⏷", aurora_i18n::tr!("wardrobe-store-existing"))).size(12.0));
-                    menu::button(ui, p, button, |ui| {
-                        for store in known.iter().take(60) {
-                            if menu::item(ui, p, "building-store", &store.name) {
-                                name.clone_from(&store.name);
-                                *marketplace = store.marketplace.clone().unwrap_or_default();
-                                *mainstore = store.mainstore.clone().unwrap_or_default();
-                            }
-                        }
-                    });
-                    ui.add_space(4.0);
-                }
-                ui.label(egui::RichText::new(aurora_i18n::tr!("wardrobe-store-name")).size(12.0).color(p.ink));
-                ui.add(egui::TextEdit::singleline(name).desired_width(f32::INFINITY).char_limit(64));
-                ui.add_space(4.0);
-                ui.label(
-                    egui::RichText::new(aurora_i18n::tr!("wardrobe-store-marketplace"))
-                        .size(12.0)
-                        .color(p.ink),
-                );
-                ui.add(
-                    egui::TextEdit::singleline(marketplace)
-                        .desired_width(f32::INFINITY)
-                        .hint_text("https://marketplace.secondlife.com/stores/…"),
-                );
-                let bad_market = !marketplace.trim().is_empty() && !card::valid_marketplace(marketplace.trim());
-                if bad_market {
-                    ui.label(
-                        egui::RichText::new(aurora_i18n::tr!("wardrobe-store-bad-marketplace"))
-                            .size(11.0)
-                            .color(p.warn),
-                    );
-                }
-                ui.add_space(4.0);
-                ui.label(
-                    egui::RichText::new(aurora_i18n::tr!("wardrobe-review-mainstore"))
-                        .size(12.0)
-                        .color(p.ink),
-                );
-                ui.add(
-                    egui::TextEdit::singleline(mainstore)
-                        .desired_width(f32::INFINITY)
-                        .hint_text("secondlife://Region/128/128/25"),
-                );
-                let bad_store = !mainstore.trim().is_empty() && !card::valid_mainstore(mainstore.trim());
-                if bad_store {
-                    ui.label(
-                        egui::RichText::new(aurora_i18n::tr!("wardrobe-store-bad-mainstore"))
-                            .size(11.0)
-                            .color(p.warn),
-                    );
-                }
-                let count = st.wardrobe.model.tiles.iter().filter(|t| t.creator == *creator).count();
-                ui.add_space(4.0);
-                ui.label(
-                    egui::RichText::new(aurora_i18n::tr!("wardrobe-store-link-all", count = count))
-                        .size(11.0)
-                        .color(p.muted),
-                );
-                answer = buttons(
-                    ui,
-                    p,
-                    aurora_i18n::tr!("common-save"),
-                    !name.trim().is_empty() && !bad_market && !bad_store,
-                    Some(aurora_i18n::tr!("wardrobe-store-unlink")),
-                );
-            }
             Dialog::Unsorted { search, category } => {
                 widgets::section_header(ui, p, "plus", aurora_i18n::tr!("wardrobe-unsorted-title"));
                 ui.label(
@@ -741,38 +705,42 @@ pub(super) fn show(
                             binding.new = true;
                         }
                     }
-                    Dialog::Fits { item, fits, kit } => {
+                    Dialog::Fits { item, fits } => {
+                        txn.binding(item).fits = (!reset).then(|| names(&fits));
+                    }
+                    Dialog::Register { item, part, name, sizes } => {
                         let binding = txn.binding(item);
-                        binding.fits = (!reset).then(|| names(&fits));
-                        binding.kit = (!reset && !names(&kit).is_empty()).then(|| names(&kit));
+                        if reset {
+                            binding.kit = None;
+                            binding.part = None;
+                        } else {
+                            let mut kit = vec![name.trim().to_owned()];
+                            kit.extend(names(&sizes).into_iter().filter(|size| !size.eq_ignore_ascii_case(name.trim())));
+                            binding.kit = Some(kit);
+                            binding.part = Some(part);
+                            // the category that goes with the part, unless
+                            // the user already chose one
+                            let tag = match part {
+                                Part::Body => Some(("body-parts", "mesh-body")),
+                                Part::Head => Some(("heads", "mesh-head")),
+                                Part::Ears => Some(("body-parts", "ears")),
+                                Part::Hands => Some(("body-parts", "hands")),
+                                Part::Feet => Some(("body-parts", "feet")),
+                                Part::Tail => Some(("body-parts", "tail")),
+                                Part::Wings => Some(("body-parts", "wings")),
+                                Part::AddOn => Some(("body-parts", "add-on")),
+                                Part::Other => None,
+                            };
+                            if let Some((category, subtype)) = tag
+                                && binding.categories.is_none()
+                            {
+                                binding.categories = Some(vec![Tag::new(category, subtype)]);
+                            }
+                        }
                     }
                     Dialog::Note { item, text } => {
                         let text: String = text.trim().chars().take(card::MAX_NOTE).collect();
                         txn.binding(item).note = (!reset && !text.is_empty()).then_some(text);
-                    }
-                    Dialog::LinkStore { creator, .. } if reset => {
-                        if txn.catalogue().stores.get(&creator).is_some_and(|s| s.source == Source::User) {
-                            txn.remove_store(creator);
-                        }
-                    }
-                    Dialog::LinkStore {
-                        creator,
-                        name,
-                        marketplace,
-                        mainstore,
-                    } => {
-                        // the creator's own card is never replaced by a link
-                        if !txn.catalogue().stores.get(&creator).is_some_and(|s| s.source == Source::Card) {
-                            let filled = |text: String| Some(text.trim().to_owned()).filter(|t| !t.is_empty());
-                            txn.set_store(Store {
-                                key: creator,
-                                name: name.trim().to_owned(),
-                                marketplace: filled(marketplace),
-                                mainstore: filled(mainstore),
-                                source: Source::User,
-                                ..Store::default()
-                            });
-                        }
                     }
                     _ => {}
                 })
@@ -784,7 +752,7 @@ pub(super) fn show(
 /// The picture the user gives an item: a texture item of the inventory, a
 /// file of the PC, or neither (the item's own image). A file that no item
 /// shows any more is deleted.
-fn set_picture(item: Uuid, texture: Option<Uuid>, file: Option<String>) {
+pub(super) fn set_picture(item: Uuid, texture: Option<Uuid>, file: Option<String>) {
     let old = wardrobe::with(|shared| {
         shared.wardrobe.change(false, |txn| {
             let binding = txn.binding(item);
@@ -795,7 +763,7 @@ fn set_picture(item: Uuid, texture: Option<Uuid>, file: Option<String>) {
         })
     });
     if let Some(name) = old {
-        pictures::discard(&name);
+        pictures::discard(pictures::Kind::Item, &name);
     }
 }
 

@@ -52,7 +52,7 @@ canvas ("Aurora Inventory Wardrobe mockups").
 
 | Word | Meaning |
 |---|---|
-| Store | A creator's shop: name, logo, Marketplace page, main store SLurl, group. One creator may have one store in the catalogue. |
+| Store | A shop: name, logo, Marketplace page, main store SLurl, group. A creator's card makes their store; the user makes others and links a creator, or a single item, to one. |
 | Pack | A product box: name, version, event, demo flag, and the items it holds. |
 | Item | One inventory item of a pack, with its category, subtype, kits, HUDs, note and picture. |
 | Card | The `Aurora Wardrobe` notecard that describes a store, a pack and its items. |
@@ -147,6 +147,8 @@ has its three translations.
 - A card gives a category alone (`Tops`) or both (`Tops/T-shirt`). Every
   category has an `Other` subtype for what the list does not name; a
   category given alone is the same as its `Other`.
+- In the categories dialog, a click on a type chooses it in place of the
+  one set; Ctrl or Shift + click adds a second one.
 - An item may carry **several categories**, up to four, as a comma
   separated list, and **up to two subtypes per category**, joined by `+`
   (`Tops/Shirt+Jacket, Bottoms/Shorts` for a romper with an open shirt,
@@ -328,7 +330,8 @@ dismissable note "Filed 5 new items · 2 Tops, 1 Shoes…" with Undo.
 or attachment, with the category submenu; the card's right-click menu
 offers Categories… (a check per category and subtype, two subtypes at
 most per category, the main ones marked, "Make main" on any other), Fits…,
-Change picture…, Favorite, "This is a body or a head" (section 9), Same
+Change picture…, Favorite, Demo, "Register as body, head or body part…"
+(section 9), Same
 product as… (pick another item of the same creator: this one joins its
 product record and takes the pack, kits and HUDs, its own overrides kept;
 when no card describes the other item, a record of the user's own is made
@@ -338,6 +341,24 @@ the inventory, Remove from Wardrobe (which removes the binding and the
 overrides, never the item).
 
 ## 8. Stores and HUDs
+
+**The stores.** A store is a record of its own. The one a creator's card
+describes has the creator's id as its key and is theirs: it is shown as it
+is, never edited by the user. The user makes other stores and links them:
+to every item of a creator, or to one item alone, which is also what a
+store given to an item whose creator the inventory has not told yet falls
+back to. The store of an item is, in order: the one linked to that item,
+its pack's (a card), the one linked to its creator, the one a card of
+another pack named for that creator.
+
+"Stores…" (the Wardrobe's menu, and a card's menu) lists every store the
+PC knows with its item count; a click opens its sheet: name, Marketplace
+page, main store, and a logo brought from a file or the clipboard and
+framed like a card's picture. The logos are kept in the catalogue's
+`logos` folder, shared like the catalogue. "Link a store…" on a card opens
+the same sheet with a menu of the stores already known and the choice
+between "All items by this creator" and "This item only"; saving says so
+in the Wardrobe's line. Deleting a store takes its links away.
 
 **A creator's store** comes, in order, from the creator's trusted card;
 else from a store the user linked ("Link a store to kiko.makes": name,
@@ -392,10 +413,13 @@ declared, matched by creator id and folded name, then a short list in the
 sources of mainstream bodies and heads, each recognised by the words its
 name must hold, such as the brand and "body" or "head", and never by a
 creator id, which the repository does not keep); the user, who can say of
-any item that it is a kit, with its names and sizes ("Created for…"), or
-in one click with "This is a body or a head", a menu of the bodies and
-heads of that list which marks the one the item's name tells. Auto-sort
-files such an item as a Mesh body or a Mesh head. Every kit has a **part**:
+any item that it is a kit with "Register as body, head or body part…": the
+part (body, head, ears, hands, feet, tail, wings, add-on, other), the name
+creators call it or a nickname of the user's own, and its other names and
+sizes; the bodies and heads of that list are a click away, the one the
+item's name tells marked. Registering also files the item under the
+category of its part unless the user chose one. Auto-sort files a body or
+a head it recognises as a Mesh body or a Mesh head. Every kit has a **part**:
 body, head, ears, hands, feet, tail, wings, add-on or other.
 
 The **"Created for" chip** chooses one kit at a time: the menu lists every
@@ -443,13 +467,17 @@ dialogs, since the rules are shared.
   top.
 - Cards: a square picture (the picture the user chose, else the card's,
   else the inventory image, else the category icon on a neutral tile), the
-  worn check at the top left, a NEW tag at the top right, the store's mark
-  at the bottom left (its logo, else its initials on a colour the store
-  keeps everywhere) followed by "+HUD" or "+2 HUDs", a heart at the bottom
-  right for a favourite; the name under the picture, and the main category's type
+  worn check at the top left, a NEW tag at the top right, DEMO in the
+  middle of the top edge, "+HUD" or "+2 HUDs" at the bottom left, a heart
+  at the bottom right for a favourite. Under the picture, the name, then
+  one row: the store's mark (its logo, else its initials on a colour the
+  store keeps everywhere), the store's name and the type; the creator's
+  name stands for a store that is not known; the name under the picture, and the main category's type
   and the store under it in the All view.
 - Chips: Worn, New, Favorites, Has a HUD; "Created for"; More filters (Not
-  worn, New this week, Event, Store with counts, Clear). Thin shows the
+  worn, New this week, demos shown, hidden or alone, Event, Store with
+  counts, Clear). An item is a demo when the user says so, else when its
+  card does, else when "demo" is a word of its name. Thin shows the
   categories as a strip of pills and the same chips and menus under it.
 - Sort: Date added (default, newest first), Last worn, Name, Store,
   Category; an order toggle.
@@ -469,8 +497,10 @@ dialogs, since the rules are shared.
 
 **Pictures.** "Change picture…" takes a texture of the item's folder, a
 file of the PC, or a picture copied to the clipboard (a button, or
-Ctrl+V). A file or a copied picture is fitted in 512 pixels and kept as a
-PNG in the account's `wardrobe-pictures` folder: it is never uploaded and
+Ctrl+V). A file or a copied picture is first framed: it shows in a
+square, dragged to pan and zoomed with the wheel or a slider, and the
+square is what is kept, 512 pixels wide, as a PNG in the account's
+`wardrobe-pictures` folder: it is never uploaded and
 no texture is created on the grid. A stack shows the picture of the copy
 it acts on, else the first of its copies that has one.
 
@@ -614,8 +644,7 @@ Left for later, each a ⬜ line of `TASKS.md`:
   readout), and refusals drawn as tips on a refused drag.
 - A card imported from a file, applied to a folder the user chooses.
 - "Applied" and "Review" badges on a card's row in the list.
-- A logo for a store the user links (its initials stand for it), and a
-  `picture` column in the creator tool.
+- A `picture` column in the creator tool.
 - "Save outfit" in Wearing now.
 - The bottom filter sheet of the Thin layout (a menu holds its choices).
 

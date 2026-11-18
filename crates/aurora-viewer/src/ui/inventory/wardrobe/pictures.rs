@@ -10,9 +10,26 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
-/// The longest side kept, and the largest file read.
-const SIDE: u32 = 512;
+/// The side of a saved picture, the longest side kept while it is framed,
+/// and the largest file read.
+pub(super) const SIDE: u32 = 512;
+const WORK_SIDE: u32 = 1536;
 const MAX_BYTES: u64 = 32 * 1024 * 1024;
+
+/// What a picture is for, which says where it is kept: a card's picture in
+/// the account's folder, a store's logo next to the shared catalogue.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum Kind {
+    Item,
+    Logo,
+}
+
+fn folder(kind: Kind) -> Option<PathBuf> {
+    wardrobe::with(|shared| match kind {
+        Kind::Item => shared.pictures.clone(),
+        Kind::Logo => shared.logos.clone(),
+    })
+}
 
 enum Slot {
     Loading(crossbeam_channel::Receiver<Option<egui::ColorImage>>),
@@ -41,7 +58,7 @@ fn color_image(image: &image::RgbaImage) -> egui::ColorImage {
 
 /// The texture of a chosen picture, read off the frame thread the first
 /// time it is asked for; `None` until it is there.
-pub(super) fn texture(ctx: &egui::Context, name: &str) -> Option<egui::TextureHandle> {
+pub(super) fn texture(ctx: &egui::Context, kind: Kind, name: &str) -> Option<egui::TextureHandle> {
     if !valid(name) {
         return None;
     }
@@ -65,7 +82,7 @@ pub(super) fn texture(ctx: &egui::Context, name: &str) -> Option<egui::TextureHa
     let (tx, done) = crossbeam_channel::bounded(1);
     if let Some(image) = lock(&MEMORY).as_ref().and_then(|m| m.get(name).cloned()) {
         let _ = tx.send(Some((*image).clone()));
-    } else if let Some(folder) = wardrobe::with(|shared| shared.pictures.clone()) {
+    } else if let Some(folder) = folder(kind) {
         let path = folder.join(name);
         let ctx = ctx.clone();
         let spawned = std::thread::Builder::new().name("aurora-wardrobe-picture".into()).spawn(move || {
@@ -97,15 +114,37 @@ pub(super) enum From {
     Clipboard,
 }
 
-/// A picture being chosen: the name of its file once it is saved, `None`
+/// A picture being chosen: the picture read, ready to be framed, `None`
 /// when the user cancelled, or why it failed.
-pub(super) type Job = crossbeam_channel::Receiver<Result<Option<String>, String>>;
+pub(super) type Job = crossbeam_channel::Receiver<Result<Option<Arc<image::RgbaImage>>, String>>;
+/// A framed picture being saved: the name of its file.
+pub(super) type SaveJob = crossbeam_channel::Receiver<Result<String, String>>;
 
-fn fitted(image: image::DynamicImage) -> image::RgbaImage {
-    if image.width().max(image.height()) > SIDE {
-        image.thumbnail(SIDE, SIDE).to_rgba8()
+fn fitted(image: image::DynamicImage, side: u32) -> image::RgbaImage {
+    if image.width().max(image.height()) > side {
+        image.thumbnail(side, side).to_rgba8()
     } else {
         image.to_rgba8()
+    }
+}
+
+/// The square of `image` the user framed: `center` in the picture (0 to 1
+/// on each axis) and `zoom` (1 shows the whole shorter side), saved `SIDE`
+/// pixels wide.
+pub(super) fn framed(image: &image::RgbaImage, center: [f32; 2], zoom: f32) -> image::RgbaImage {
+    let (width, height) = (image.width().max(1), image.height().max(1));
+    let side = ((width.min(height) as f32 / zoom.max(1.0)).round() as u32).clamp(1, width.min(height));
+    let left = ((center[0] * width as f32) - side as f32 / 2.0)
+        .round()
+        .clamp(0.0, (width - side) as f32) as u32;
+    let top = ((center[1] * height as f32) - side as f32 / 2.0)
+        .round()
+        .clamp(0.0, (height - side) as f32) as u32;
+    let square = image::imageops::crop_imm(image, left, top, side, side).to_image();
+    if side == SIDE {
+        square
+    } else {
+        image::imageops::resize(&square, SIDE, SIDE, image::imageops::FilterType::Triangle)
     }
 }
 
@@ -137,11 +176,10 @@ fn from_clipboard() -> Result<Option<image::DynamicImage>, String> {
         .ok_or_else(empty)
 }
 
-/// Chooses a picture off the frame thread: the file dialog blocks, and so
+/// Reads a picture off the frame thread: the file dialog blocks, and so
 /// may the clipboard.
 pub(super) fn choose(ctx: &egui::Context, from: From) -> Job {
     let (tx, job) = crossbeam_channel::bounded(1);
-    let folder = wardrobe::with(|shared| shared.pictures.clone());
     let ctx = ctx.clone();
     let failed = tx.clone();
     let spawned = std::thread::Builder::new().name("aurora-wardrobe-picture".into()).spawn(move || {
@@ -149,28 +187,7 @@ pub(super) fn choose(ctx: &egui::Context, from: From) -> Job {
             From::File => from_file(),
             From::Clipboard => from_clipboard(),
         };
-        let saved = chosen.and_then(|image| {
-            let Some(image) = image else { return Ok(None) };
-            let image = fitted(image);
-            let name = format!("{}.png", uuid::Uuid::new_v4());
-            match &folder {
-                Some(folder) => {
-                    let mut bytes = Vec::new();
-                    image::DynamicImage::ImageRgba8(image)
-                        .write_to(&mut std::io::Cursor::new(&mut bytes), image::ImageFormat::Png)
-                        .map_err(|error| error.to_string())?;
-                    std::fs::create_dir_all(folder).map_err(|error| error.to_string())?;
-                    crate::atomic_file::write(&folder.join(&name), &bytes).map_err(|error| error.to_string())?;
-                }
-                None => {
-                    lock(&MEMORY)
-                        .get_or_insert_with(HashMap::new)
-                        .insert(name.clone(), Arc::new(color_image(&image)));
-                }
-            }
-            Ok(Some(name))
-        });
-        let _ = tx.send(saved);
+        let _ = tx.send(chosen.map(|image| image.map(|image| Arc::new(fitted(image, WORK_SIDE)))));
         ctx.request_repaint();
     });
     if let Err(error) = spawned {
@@ -179,8 +196,47 @@ pub(super) fn choose(ctx: &egui::Context, from: From) -> Job {
     job
 }
 
+/// Saves a framed picture as a PNG of its folder, off the frame thread;
+/// the demo keeps it in memory.
+pub(super) fn save(ctx: &egui::Context, kind: Kind, image: image::RgbaImage) -> SaveJob {
+    let (tx, job) = crossbeam_channel::bounded(1);
+    let folder = folder(kind);
+    let ctx = ctx.clone();
+    let failed = tx.clone();
+    let spawned = std::thread::Builder::new().name("aurora-wardrobe-picture".into()).spawn(move || {
+        let name = format!("{}.png", uuid::Uuid::new_v4());
+        let saved = match &folder {
+            Some(folder) => {
+                let mut bytes = Vec::new();
+                image::DynamicImage::ImageRgba8(image)
+                    .write_to(&mut std::io::Cursor::new(&mut bytes), image::ImageFormat::Png)
+                    .map_err(|error| error.to_string())
+                    .and_then(|()| std::fs::create_dir_all(folder).map_err(|error| error.to_string()))
+                    .and_then(|()| crate::atomic_file::write(&folder.join(&name), &bytes).map_err(|error| error.to_string()))
+            }
+            None => {
+                lock(&MEMORY)
+                    .get_or_insert_with(HashMap::new)
+                    .insert(name.clone(), Arc::new(color_image(&image)));
+                Ok(())
+            }
+        };
+        let _ = tx.send(saved.map(|()| name));
+        ctx.request_repaint();
+    });
+    if let Err(error) = spawned {
+        let _ = failed.send(Err(error.to_string()));
+    }
+    job
+}
+
+/// The picture being framed, as a texture for the framing dialog.
+pub(super) fn preview(ctx: &egui::Context, image: &image::RgbaImage) -> egui::TextureHandle {
+    ctx.load_texture("wardrobe-picture-framing", color_image(image), egui::TextureOptions::LINEAR)
+}
+
 /// Forgets a picture that no card shows any more, and deletes its file.
-pub(super) fn discard(name: &str) {
+pub(super) fn discard(kind: Kind, name: &str) {
     if !valid(name) {
         return;
     }
@@ -190,7 +246,7 @@ pub(super) fn discard(name: &str) {
     if let Some(memory) = lock(&MEMORY).as_mut() {
         memory.remove(name);
     }
-    if let Some(folder) = wardrobe::with(|shared| shared.pictures.clone()) {
+    if let Some(folder) = folder(kind) {
         let path: PathBuf = folder.join(name);
         if let Err(error) = std::fs::remove_file(&path)
             && error.kind() != std::io::ErrorKind::NotFound
@@ -222,10 +278,33 @@ mod tests {
     #[test]
     fn a_large_picture_is_fitted_and_a_small_one_kept() {
         let large = image::DynamicImage::ImageRgba8(image::RgbaImage::new(2048, 1024));
-        let fitted_large = fitted(large);
+        let fitted_large = fitted(large, 512);
         assert_eq!((fitted_large.width(), fitted_large.height()), (512, 256));
         let small = image::DynamicImage::ImageRgba8(image::RgbaImage::new(200, 300));
-        let fitted_small = fitted(small);
+        let fitted_small = fitted(small, 512);
         assert_eq!((fitted_small.width(), fitted_small.height()), (200, 300));
+    }
+
+    #[test]
+    fn a_framed_picture_is_the_square_the_user_chose() {
+        // a wide picture, red at the left and blue at the right
+        let mut wide = image::RgbaImage::new(400, 200);
+        for (x, _, pixel) in wide.enumerate_pixels_mut() {
+            *pixel = if x < 200 {
+                image::Rgba([255, 0, 0, 255])
+            } else {
+                image::Rgba([0, 0, 255, 255])
+            };
+        }
+        let left = framed(&wide, [0.0, 0.5], 1.0);
+        assert_eq!((left.width(), left.height()), (SIDE, SIDE));
+        assert_eq!(left.get_pixel(SIDE / 2, SIDE / 2).0, [255, 0, 0, 255]);
+        // panned to the right edge: the frame stays inside the picture
+        let right = framed(&wide, [1.0, 0.5], 1.0);
+        assert_eq!(right.get_pixel(SIDE / 2, SIDE / 2).0, [0, 0, 255, 255]);
+        // zoomed in on the middle: half of each colour
+        let middle = framed(&wide, [0.5, 0.5], 4.0);
+        assert_eq!(middle.get_pixel(2, SIDE / 2).0, [255, 0, 0, 255]);
+        assert_eq!(middle.get_pixel(SIDE - 3, SIDE / 2).0, [0, 0, 255, 255]);
     }
 }

@@ -44,7 +44,7 @@ pub(in super::super) fn paint_picture(
             None
         }),
         Some(model::Picture::File(name)) => {
-            local = pictures::texture(ui.ctx(), name);
+            local = pictures::texture(ui.ctx(), pictures::Kind::Item, name);
             local.as_ref()
         }
         None => None,
@@ -86,6 +86,14 @@ pub(in super::super) fn store_mark(
     wanted: &mut HashSet<Uuid>,
 ) {
     let Some(store) = &tile.store else { return };
+    // the logo the user gave, then the one a card names
+    if let Some(texture) = tile
+        .logo_file
+        .as_ref()
+        .and_then(|file| pictures::texture(ui.ctx(), pictures::Kind::Logo, file))
+    {
+        return widgets::square_picture(ui, rect, &texture);
+    }
     if let Some(logo) = tile.logo {
         match images.get(&logo) {
             Some(texture) => return widgets::square_picture(ui, rect, texture),
@@ -156,8 +164,7 @@ pub(super) fn show(
         0.2 * motion(ui),
     );
     let searching = !model::query(&st.wardrobe.filter.text).words.is_empty();
-    let with_sub = matches!(st.wardrobe.filter.rail, model::Rail::All | model::Rail::Wearing) || searching;
-    let cell_h = side + 4.0 + NAME_H + if with_sub { SUB_H } else { 0.0 } + 6.0;
+    let cell_h = side + 4.0 + NAME_H + SUB_H + 6.0;
 
     // the cells, an open stack spread into its copies
     let mut cells: Vec<Cell> = Vec::with_capacity(st.wardrobe.visible.len());
@@ -280,6 +287,10 @@ pub(super) fn show(
                                 continue;
                             }
                             let tile = &st.wardrobe.model.tiles[cell.tile];
+                            // the creator's name stands for a store not known yet
+                            if tile.store.is_none() && !tile.creator.is_nil() {
+                                st.wardrobe.wanted_names.insert(tile.creator);
+                            }
                             let response = ui.interact(rect, ui.scope_id().with(("wardrobe-cell", cell.item)), Sense::click());
                             let view = CellView {
                                 selected: st.wardrobe.selected,
@@ -298,7 +309,6 @@ pub(super) fn show(
                                 &mut st.wanted_images,
                                 facts,
                                 images,
-                                with_sub,
                                 &response,
                             );
                             // the item card, after the pointer rests; instant
@@ -399,7 +409,6 @@ fn paint_cell(
     wanted: &mut HashSet<Uuid>,
     facts: &Facts,
     images: &std::collections::HashMap<Uuid, egui::TextureHandle>,
-    with_sub: bool,
     response: &egui::Response,
 ) -> Option<Rect> {
     let selected = view.selected == Some(cell.item);
@@ -477,12 +486,18 @@ fn paint_cell(
             p.teal,
         );
     }
-    // bottom left: the store's mark, then what the item comes with
-    let marked = tile.store.is_some();
-    if marked {
-        let at = Rect::from_min_size(picture.left_bottom() + Vec2::new(5.0, -23.0), Vec2::splat(18.0));
-        store_mark(ui, p, at, tile, images, wanted);
+    // a demo says so, in the middle of the top edge
+    if tile.demo && !opened {
+        badge(
+            ui,
+            &aurora_i18n::tr!("wardrobe-tip-demo").to_uppercase(),
+            picture.center_top() + Vec2::new(0.0, 5.0),
+            egui::Align2::CENTER_TOP,
+            p.on_accent,
+            p.amber,
+        );
     }
+    // bottom left: what the item comes with
     let huds = if opened { 0 } else { tile.huds.len() };
     if huds > 0 {
         let text = if huds == 1 {
@@ -493,7 +508,7 @@ fn paint_cell(
         badge(
             ui,
             &text,
-            picture.left_bottom() + Vec2::new(if marked { 27.0 } else { 5.0 }, -5.0),
+            picture.left_bottom() + Vec2::new(5.0, -5.0),
             egui::Align2::LEFT_BOTTOM,
             p.ink,
             p.bar,
@@ -517,27 +532,37 @@ fn paint_cell(
     let ink = if tile.fit.fits() { p.ink } else { p.muted };
     let galley = elided(ui, name, 12.0, ink, side);
     ui.painter().galley(egui::pos2(rect.left(), rect.top() + side + 4.0), galley, ink);
-    if with_sub {
-        let mut sub = tile.main().map(tag_label).unwrap_or_default();
-        if opened {
-            sub = if tile.original == Some(cell.item) {
-                aurora_i18n::tr!("wardrobe-copy-original").to_owned()
-            } else if tile.copies.first() == Some(&cell.item) {
-                aurora_i18n::tr!("wardrobe-copy-newest").to_owned()
-            } else {
-                sub
-            };
-        } else if let Some(store) = &tile.store {
-            sub = if sub.is_empty() {
-                store.clone()
-            } else {
-                format!("{sub} · {store}")
-            };
+    // the second row: the store's mark and name, then the type; the
+    // creator's name stands for a store that is not known
+    let row = rect.top() + side + 4.0 + NAME_H;
+    let kind = tile.main().map(tag_label).unwrap_or_default();
+    let mut left = rect.left();
+    let text = if opened {
+        if tile.original == Some(cell.item) {
+            aurora_i18n::tr!("wardrobe-copy-original").to_owned()
+        } else if tile.copies.first() == Some(&cell.item) {
+            aurora_i18n::tr!("wardrobe-copy-newest").to_owned()
+        } else {
+            kind
         }
-        let galley = elided(ui, &sub, 10.5, p.muted, side);
-        ui.painter()
-            .galley(egui::pos2(rect.left(), rect.top() + side + 4.0 + NAME_H), galley, p.muted);
-    }
+    } else {
+        let who = match &tile.store {
+            Some(store) => {
+                let at = Rect::from_min_size(egui::pos2(left, row + 1.0), Vec2::splat(SUB_H - 2.0));
+                store_mark(ui, p, at, tile, images, wanted);
+                left = at.right() + 4.0;
+                store.as_str()
+            }
+            None => facts.names.get(&tile.creator).map_or("", String::as_str),
+        };
+        match (who.is_empty(), kind.is_empty()) {
+            (false, false) => format!("{who} · {kind}"),
+            (false, true) => who.to_owned(),
+            (true, _) => kind,
+        }
+    };
+    let galley = elided(ui, &text, 10.5, p.muted, (rect.right() - left).max(8.0));
+    ui.painter().galley(egui::pos2(left, row), galley, p.muted);
     stack
 }
 

@@ -2961,7 +2961,7 @@ pub struct TitleMode<'a> {
 /// The modes of a window: icons side by side in one track, the chosen one
 /// on the accent, laid out in the title bar's right-to-left row.
 fn title_modes(ui: &mut egui::Ui, p: &Palette, modes: &[TitleMode<'_>], selected: &mut usize) {
-    const CELL: Vec2 = Vec2::new(24.0, 20.0);
+    const CELL: Vec2 = Vec2::new(32.0, 22.0);
     let (track, _) = ui.allocate_exact_size(Vec2::new(CELL.x * modes.len() as f32 + 4.0, CELL.y + 2.0), Sense::hover());
     let radius = ui.visuals().widgets.inactive.corner_radius;
     ui.painter().rect_filled(track, radius, p.bar);
@@ -2987,7 +2987,7 @@ fn title_modes(ui: &mut egui::Ui, p: &Palette, modes: &[TitleMode<'_>], selected
             p.muted
         };
         if let Some(texture) = super::icons::global(mode.icon) {
-            let at = egui::Rect::from_center_size(cell.center(), Vec2::splat(14.0));
+            let at = egui::Rect::from_center_size(cell.center(), Vec2::splat(16.0));
             ui.painter().image(
                 texture.id(),
                 at,

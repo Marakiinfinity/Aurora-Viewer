@@ -11,11 +11,13 @@
 
 pub mod creator;
 mod dialogs;
+mod framing;
 mod grid;
 pub mod model;
 mod pictures;
 mod quick_look;
 pub mod review;
+mod stores;
 pub mod tips;
 
 use super::*;
@@ -139,7 +141,13 @@ pub struct State {
     pending_show: Option<Uuid>,
     reveal: bool,
     /// A picture being chosen for an item, from a file or the clipboard.
-    picture_job: Option<(Uuid, pictures::Job)>,
+    picture_job: Option<(framing::Target, pictures::Job)>,
+    /// The picture read, being framed; then the framed one being saved.
+    framing: Option<framing::Framing>,
+    save_job: Option<(framing::Target, pictures::SaveJob)>,
+    /// The store being made or edited, and the list of stores.
+    store_edit: Option<stores::Edit>,
+    stores: stores::List,
     /// The card whose right-click menu is open, and where.
     menu: Option<(Uuid, egui::Pos2)>,
     /// The names of the copies of an open stack, by item.
@@ -184,10 +192,10 @@ impl State {
     /// The review sheet is open, in whatever style the window has: its
     /// creators' names are asked.
     pub fn shows_names(&self) -> bool {
-        self.review.is_some() || self.pending_review.is_some()
+        self.review.is_some() || self.pending_review.is_some() || self.store_edit.is_some()
     }
 
-    /// `AURORA_DEMO_WARDROBE=…,…,quick|review|categories`: one of the
+    /// `AURORA_DEMO_WARDROBE=…,…,quick|review|categories|register|store|stores`: one of the
     /// Wardrobe's overlays opened for a capture.
     pub fn demo_show(&mut self, what: &str, inv: &Inventory) {
         let first = self.visible.first().map(|(n, _)| self.model.tiles[*n].clone());
@@ -197,6 +205,12 @@ impl State {
                 self.open_quick_look(tile.item);
             }
             ("categories", Some(tile)) => self.dialog = Some(dialogs::Dialog::categories(tile.item, &tile.tags)),
+            ("register", Some(tile)) => {
+                let detected = inv.items.get(&tile.item).and_then(wardrobe::fit::preset_of);
+                self.dialog = Some(dialogs::Dialog::register(tile.item, categories::Part::Body, &tile.kit, detected));
+            }
+            ("store", Some(tile)) => self.store_edit = Some(stores::Edit::for_item(tile.item, tile.creator, tile.store_key)),
+            ("stores", _) => self.stores.open = true,
             ("review", _) => {
                 // the card written by someone else, else any card
                 let cards = wardrobe::scan::card_notecards(inv);
@@ -469,7 +483,57 @@ pub(super) fn overlays(
     images: &std::collections::HashMap<Uuid, egui::TextureHandle>,
 ) {
     review::show(ctx, p, inv, st, facts, images);
-    dialogs::show(ctx, p, inv, st, facts, images);
+    dialogs::show(ctx, p, inv, st, images);
+    stores::list(ctx, p, st, images);
+    stores::sheet(ctx, p, st, facts, images);
+    pictures_step(ctx, p, st);
+}
+
+/// A picture on its way: read from a file or the clipboard, framed by the
+/// user, saved, then given to the card or to the store being edited.
+fn pictures_step(ctx: &egui::Context, p: &Palette, st: &mut InventoryUi) {
+    if let Some((target, job)) = &st.wardrobe.picture_job
+        && let Ok(read) = job.try_recv()
+    {
+        let target = *target;
+        st.wardrobe.picture_job = None;
+        match read {
+            Ok(Some(image)) => st.wardrobe.framing = Some(framing::Framing::new(ctx, target, image)),
+            Ok(None) => {}
+            Err(reason) => st.wardrobe.say(reason, false),
+        }
+    }
+    if let Some(open) = &mut st.wardrobe.framing {
+        match framing::show(ctx, p, open) {
+            framing::Answer::Open => {}
+            framing::Answer::Cancel => st.wardrobe.framing = None,
+            framing::Answer::Keep(image) => {
+                let target = open.target;
+                st.wardrobe.save_job = Some((target, pictures::save(ctx, target.kind(), image)));
+                st.wardrobe.framing = None;
+            }
+        }
+    }
+    if let Some((target, job)) = &st.wardrobe.save_job
+        && let Ok(saved) = job.try_recv()
+    {
+        let target = *target;
+        st.wardrobe.save_job = None;
+        match (saved, target) {
+            (Ok(file), framing::Target::Item(item)) => {
+                dialogs::set_picture(item, None, Some(file));
+                if matches!(st.wardrobe.dialog, Some(dialogs::Dialog::Picture { .. })) {
+                    st.wardrobe.dialog = None;
+                }
+            }
+            (Ok(file), framing::Target::Logo) => match &mut st.wardrobe.store_edit {
+                Some(edit) => edit.logo_file = Some(file),
+                // the sheet was closed meanwhile: the file is nobody's
+                None => pictures::discard(pictures::Kind::Logo, &file),
+            },
+            (Err(reason), _) => st.wardrobe.say(reason, false),
+        }
+    }
 }
 
 /// The tiles shown: the filter and the order applied, when either or the
@@ -870,6 +934,7 @@ fn tools_row(ui: &mut egui::Ui, p: &Palette, st: &mut InventoryUi, prefs: &mut I
         let mut hints = prefs.wardrobe.hints;
         let mut creator = false;
         let mut unsorted = false;
+        let mut stores = false;
         widgets::icon_menu(ui, p, "dots-filled", aurora_i18n::tr!("wardrobe-more"), |ui| {
             if menu::item(ui, p, "file-text-filled", aurora_i18n::tr!("wardrobe-creator-open")) {
                 creator = true;
@@ -877,6 +942,9 @@ fn tools_row(ui: &mut egui::Ui, p: &Palette, st: &mut InventoryUi, prefs: &mut I
             let count = st.wardrobe.model.unsorted.len();
             if menu::item_if(ui, p, "plus", &aurora_i18n::tr!("wardrobe-unsorted", count = count), count > 0) {
                 unsorted = true;
+            }
+            if menu::item(ui, p, "building-store", aurora_i18n::tr!("wardrobe-stores-open")) {
+                stores = true;
             }
             menu::separator(ui, p);
             menu::toggle(ui, p, "stack-2-filled", aurora_i18n::tr!("wardrobe-pref-stacks"), &mut stacks);
@@ -894,6 +962,9 @@ fn tools_row(ui: &mut egui::Ui, p: &Palette, st: &mut InventoryUi, prefs: &mut I
         }
         if unsorted {
             st.wardrobe.dialog = Some(dialogs::Dialog::unsorted());
+        }
+        if stores {
+            st.wardrobe.stores.open = true;
         }
     });
 }
@@ -1034,7 +1105,11 @@ fn created_for(ui: &mut egui::Ui, p: &Palette, w: &mut State, width: Width) {
 fn more_filters(ui: &mut egui::Ui, p: &Palette, w: &mut State, names: &std::collections::HashMap<Uuid, String>) {
     let events = w.model.events.clone();
     let stores = w.model.groups(Browse::Creator, names);
-    let on = w.filter.event.is_some() || w.filter.store.is_some() || w.filter.not_worn || w.filter.this_week;
+    let on = w.filter.event.is_some()
+        || w.filter.store.is_some()
+        || w.filter.not_worn
+        || w.filter.this_week
+        || w.filter.demos != model::Demos::All;
     let button =
         egui::Button::new(egui::RichText::new(format!("{}  ⏷", aurora_i18n::tr!("wardrobe-more-filters"))).size(12.0)).selected(on);
     let filter = &mut w.filter;
@@ -1045,6 +1120,16 @@ fn more_filters(ui: &mut egui::Ui, p: &Palette, w: &mut State, names: &std::coll
         }
         if menu::check(ui, p, "", aurora_i18n::tr!("wardrobe-filter-this-week"), filter.this_week, true) {
             filter.this_week = !filter.this_week;
+        }
+        menu::separator(ui, p);
+        for (way, key) in [
+            (model::Demos::All, "wardrobe-demos-all"),
+            (model::Demos::Hide, "wardrobe-demos-hide"),
+            (model::Demos::Only, "wardrobe-demos-only"),
+        ] {
+            if menu::check(ui, p, "", aurora_i18n::text(key), filter.demos == way, true) {
+                filter.demos = way;
+            }
         }
         menu::submenu(
             ui,
@@ -1295,7 +1380,12 @@ fn selection_bar(
             ui.add_space(4.0);
             let name = inv.items.get(&item).map_or(tile.name.as_str(), |it| it.name.as_str());
             ui.add(egui::Label::new(egui::RichText::new(name).size(13.0).strong().color(p.ink)).truncate());
-            let mut line = tile.store.clone().unwrap_or_default();
+            // the store, else the creator's name
+            let mut line = tile
+                .store
+                .clone()
+                .or_else(|| facts.names.get(&tile.creator).cloned())
+                .unwrap_or_default();
             if width != Width::Thin {
                 if !line.is_empty() {
                     line.push_str(" · ");
@@ -1451,7 +1541,7 @@ pub(super) fn tile_menu(
         st.wardrobe.dialog = Some(dialogs::Dialog::categories(item, &tile.tags));
     }
     if menu::item(ui, p, "man-filled", aurora_i18n::tr!("wardrobe-menu-fits")) {
-        st.wardrobe.dialog = Some(dialogs::Dialog::fits(item, &tile.fits, &tile.kit));
+        st.wardrobe.dialog = Some(dialogs::Dialog::fits(item, &tile.fits));
     }
     if menu::item(ui, p, "photo-filled", aurora_i18n::tr!("wardrobe-menu-picture")) {
         st.wardrobe.dialog = Some(dialogs::Dialog::picture(item));
@@ -1463,51 +1553,24 @@ pub(super) fn tile_menu(
     if menu::check(ui, p, "heart-filled", aurora_i18n::tr!("wardrobe-menu-favorite"), favorite, true) {
         wardrobe::with(|shared| shared.wardrobe.change(false, |txn| txn.binding(item).favorite = !favorite));
     }
-    // a body or a head the fit hints know: said in one click, and found
-    // from the item's name when it tells
-    let detected = inv.items.get(&item).and_then(wardrobe::fit::preset_of);
-    let said: Vec<String> = tile.kit.clone();
-    menu::submenu(ui, p, "man-filled", aurora_i18n::tr!("wardrobe-menu-preset"), true, |ui| {
-        let mut chosen: Option<Option<(&str, categories::Part)>> = None;
-        if menu::check(ui, p, "", aurora_i18n::tr!("wardrobe-preset-none"), said.is_empty(), true) {
-            chosen = Some(None);
-        }
-        let mut part = None;
-        for (name, kind) in wardrobe::fit::presets() {
-            if part != Some(kind) {
-                part = Some(kind);
-                menu::separator(ui, p);
-                ui.label(egui::RichText::new(kind.label()).size(11.0).color(p.muted));
-            }
-            let on = said.first().is_some_and(|kit| kit.eq_ignore_ascii_case(name));
-            let label = if detected.is_some_and(|(found, _)| found == name) {
-                aurora_i18n::tr!("wardrobe-preset-detected", name = name)
-            } else {
-                name.to_owned()
-            };
-            if menu::check(ui, p, "", &label, on, true) {
-                chosen = Some(Some((name, kind)));
-            }
-        }
-        if let Some(preset) = chosen {
-            wardrobe::with(|shared| {
-                shared.wardrobe.change(true, |txn| {
-                    let binding = txn.binding(item);
-                    binding.kit = preset.map(|(name, _)| vec![name.to_owned()]);
-                    // a body is a Mesh body, a head a Mesh head, unless the
-                    // user already said otherwise
-                    if let Some((_, kind)) = preset
-                        && binding.categories.is_none()
-                    {
-                        binding.categories = Some(vec![match kind {
-                            categories::Part::Head => categories::Tag::new("heads", "mesh-head"),
-                            _ => categories::Tag::new("body-parts", "mesh-body"),
-                        }]);
-                    }
-                })
-            });
-        }
-    });
+    // a kit others are created for: a body, a head, ears… said in one
+    // place, with the preset the item's name tells
+    if menu::check(
+        ui,
+        p,
+        "man-filled",
+        aurora_i18n::tr!("wardrobe-menu-register"),
+        !tile.kit.is_empty(),
+        true,
+    ) {
+        let detected = inv.items.get(&item).and_then(wardrobe::fit::preset_of);
+        let part = wardrobe::with(|shared| shared.wardrobe.entry(item).map_or(categories::Part::Other, |entry| entry.part()));
+        st.wardrobe.dialog = Some(dialogs::Dialog::register(item, part, &tile.kit, detected));
+    }
+    if menu::check(ui, p, "tag-filled", aurora_i18n::tr!("wardrobe-tip-demo"), tile.demo, true) {
+        let demo = !tile.demo;
+        wardrobe::with(|shared| shared.wardrobe.change(false, |txn| txn.binding(item).demo = Some(demo)));
+    }
     if tile.product.is_some() && menu::item(ui, p, "copy-filled", aurora_i18n::tr!("wardrobe-menu-separate")) {
         wardrobe::with(|shared| shared.wardrobe.change(true, |txn| wardrobe::matching::separate(txn, item)));
         st.wardrobe
@@ -1520,7 +1583,7 @@ pub(super) fn tile_menu(
         st.wardrobe.dialog = Some(dialogs::Dialog::link_hud(item));
     }
     menu::separator(ui, p);
-    store_rows(ui, p, st, tile);
+    store_rows(ui, p, st, tile, item);
     menu::separator(ui, p);
     if menu::item(ui, p, "folder-filled", aurora_i18n::tr!("wardrobe-menu-show-original")) {
         actions.push(InvAction::ShowMain(item));
@@ -1535,7 +1598,7 @@ pub(super) fn tile_menu(
 
 /// The store of an item: its Marketplace page and its main store, through
 /// the viewer's link rules, or "Link a store…" and the creator's profile.
-pub(super) fn store_rows(ui: &mut egui::Ui, p: &Palette, st: &mut InventoryUi, tile: &Tile) {
+pub(super) fn store_rows(ui: &mut egui::Ui, p: &Palette, st: &mut InventoryUi, tile: &Tile, item: Uuid) {
     if let Some(url) = &tile.marketplace
         && menu::item(ui, p, "external-link-filled", aurora_i18n::tr!("wardrobe-store-marketplace"))
     {
@@ -1548,7 +1611,10 @@ pub(super) fn store_rows(ui: &mut egui::Ui, p: &Palette, st: &mut InventoryUi, t
     }
     // a store the creator's card set is theirs to describe
     if (tile.store.is_none() || tile.store_by_user) && menu::item(ui, p, "link-filled", aurora_i18n::tr!("wardrobe-store-link")) {
-        st.wardrobe.dialog = Some(dialogs::Dialog::link_store(tile.creator));
+        st.wardrobe.store_edit = Some(stores::Edit::for_item(item, tile.creator, tile.store_key));
+    }
+    if menu::item(ui, p, "building-store", aurora_i18n::tr!("wardrobe-stores-open")) {
+        st.wardrobe.stores.open = true;
     }
     if !tile.creator.is_nil() && menu::item(ui, p, "user-filled", aurora_i18n::tr!("wardrobe-store-profile")) {
         st.wardrobe.profile = Some(tile.creator);
@@ -1596,7 +1662,7 @@ fn details(
                 if (tile.store.is_none() || tile.store_by_user)
                     && widgets::flat_button(ui, p, aurora_i18n::tr!("wardrobe-store-link")).clicked()
                 {
-                    st.wardrobe.dialog = Some(dialogs::Dialog::link_store(tile.creator));
+                    st.wardrobe.store_edit = Some(stores::Edit::for_item(item, tile.creator, tile.store_key));
                 }
                 if widgets::flat_button(ui, p, aurora_i18n::tr!("wardrobe-store-profile")).clicked() {
                     st.wardrobe.profile = Some(tile.creator);
