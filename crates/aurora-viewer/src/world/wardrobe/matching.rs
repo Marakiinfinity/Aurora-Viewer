@@ -76,6 +76,12 @@ pub fn fold(name: &str) -> String {
     folded.join(" ")
 }
 
+/// Whether a name says the item is a demo: "DEMO" as a word of its own
+/// ("Sora head DEMO", "[demo] Band tee"), never part of another word.
+pub fn names_demo(name: &str) -> bool {
+    words(name).iter().any(|w| w == "demo" || w == "demos")
+}
+
 /// Whether a name says the item is a HUD: "HUD" as a word of its own.
 pub fn names_hud(name: &str) -> bool {
     words(name).iter().any(|w| w == "hud" || w == "huds")
@@ -328,6 +334,7 @@ pub fn apply(txn: &mut Txn, card: &Card, plan: &Plan, groups: Groups, embedded: 
             key: plan.card_creator,
             name: block.name.clone(),
             logo: block.logo,
+            logo_file: None,
             marketplace: block.marketplace.clone(),
             mainstore: block.mainstore.clone(),
             group: block.group,

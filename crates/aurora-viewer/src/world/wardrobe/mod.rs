@@ -104,11 +104,52 @@ impl Txn<'_> {
     pub fn remove_store(&mut self, key: Uuid) {
         if let Some(before) = self.catalogue.stores.remove(&key) {
             self.removed.stores.insert(key);
+            // nothing stays linked to a store that is gone
+            let linked: Vec<Uuid> = self
+                .catalogue
+                .creator_stores
+                .iter()
+                .filter(|(_, store)| **store == key)
+                .map(|(c, _)| *c)
+                .collect();
+            for creator in linked {
+                self.catalogue.creator_stores.remove(&creator);
+                self.removed.links.insert(creator);
+            }
+            let items: Vec<Uuid> = self
+                .account
+                .bindings
+                .iter()
+                .filter(|(_, b)| b.store == Some(key))
+                .map(|(id, _)| *id)
+                .collect();
+            for item in items {
+                self.binding(item).store = None;
+            }
             if !self.undo.stores.iter().any(|(k, _)| *k == key) {
                 self.undo.stores.push((key, Some(before)));
             }
             self.catalogue_changed = true;
         }
+    }
+
+    /// Links every item of `creator` to a store of the catalogue, or takes
+    /// the link away. Not undone: a link is the user's own, direct choice.
+    pub fn link_creator(&mut self, creator: Uuid, store: Option<Uuid>) {
+        if creator.is_nil() {
+            return;
+        }
+        match store.filter(|key| !key.is_nil()) {
+            Some(key) => {
+                self.catalogue.creator_stores.insert(creator, key);
+                self.removed.links.remove(&creator);
+            }
+            None => {
+                self.catalogue.creator_stores.remove(&creator);
+                self.removed.links.insert(creator);
+            }
+        }
+        self.catalogue_changed = true;
     }
 
     pub fn set_pack(&mut self, pack: Pack) {
@@ -242,6 +283,9 @@ impl<'a> Entry<'a> {
     }
 
     pub fn part(&self) -> Part {
+        if let Some(part) = self.binding.part {
+            return part;
+        }
         match self.product.and_then(|p| p.part) {
             Some(part) if self.binding.categories.is_none() => part,
             _ => Part::of(self.main()),
@@ -267,7 +311,21 @@ impl<'a> Entry<'a> {
             .or_else(|| self.pack.and_then(|p| p.version.as_deref()))
     }
 
-    pub fn demo(&self) -> bool {
+    /// Whether the item is a demo: the user's word, else its card's, else
+    /// `named`, what its name tells.
+    pub fn demo(&self, named: bool) -> bool {
+        self.demo_said().unwrap_or(named)
+    }
+
+    fn demo_said(&self) -> Option<bool> {
+        if self.binding.demo.is_some() {
+            return self.binding.demo;
+        }
+        let card = self.card_demo();
+        card.then_some(true)
+    }
+
+    fn card_demo(&self) -> bool {
         self.product
             .and_then(|p| p.demo)
             .or_else(|| self.pack.map(|p| p.demo))
@@ -452,14 +510,24 @@ impl Wardrobe {
         })
     }
 
-    /// The store of an item: its pack's, else the one known for its
-    /// creator (a card of another pack, or the user's link).
+    /// The store of an item, by precedence: the one the user gave this
+    /// item, its pack's (a card), the one the user linked to its creator,
+    /// the one a card of another pack named for that creator.
     pub fn store_of<'a>(&'a self, entry: Option<&Entry<'a>>, creator: Uuid) -> Option<&'a Store> {
-        // an item whose creator is not known yet has no store of its own:
+        let stores = &self.catalogue.stores;
+        // an item whose creator is not known yet has no creator's store:
         // no record may stand for "nobody"
+        let known = (!creator.is_nil()).then_some(creator);
         entry
-            .and_then(|e| e.store)
-            .or_else(|| self.catalogue.stores.get(&creator).filter(|_| !creator.is_nil()))
+            .and_then(|e| e.binding.store)
+            .and_then(|key| stores.get(&key))
+            .or_else(|| entry.and_then(|e| e.store))
+            .or_else(|| {
+                known
+                    .and_then(|c| self.catalogue.creator_stores.get(&c))
+                    .and_then(|key| stores.get(key))
+            })
+            .or_else(|| known.and_then(|c| stores.get(&c)))
     }
 
     /// The copies of each product in this account: product key → items.
@@ -487,7 +555,13 @@ pub struct Shared {
     /// Where the account keeps the pictures the user chose; `None` in the
     /// demo, which keeps them in memory.
     pub pictures: Option<PathBuf>,
+    /// Where the stores' logos given by the user are kept, shared by the
+    /// accounts of the PC like the catalogue.
+    pub logos: Option<PathBuf>,
 }
+
+/// The folder of the stores' logos, in the catalogue's folder.
+pub const LOGOS_FOLDER: &str = "logos";
 
 /// The account's folder of chosen pictures.
 pub const PICTURES_FOLDER: &str = "wardrobe-pictures";
@@ -521,6 +595,11 @@ pub fn open(files: Option<(PathBuf, PathBuf)>) {
         .as_ref()
         .and_then(|(_, account)| account.parent())
         .map(|folder| folder.join(PICTURES_FOLDER));
+    // the logos the user gave their stores, next to the shared catalogue
+    let logos = files
+        .as_ref()
+        .and_then(|(catalogue, _)| catalogue.parent())
+        .map(|folder| folder.join(LOGOS_FOLDER));
     let wardrobe = match files {
         Some((catalogue, account)) => Wardrobe::load(catalogue, account),
         None => Wardrobe::in_memory(),
@@ -530,6 +609,7 @@ pub fn open(files: Option<(PathBuf, PathBuf)>) {
     *guard = Some(Shared {
         wardrobe,
         pictures,
+        logos,
         ..Shared::default()
     });
 }

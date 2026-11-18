@@ -36,7 +36,9 @@ pub enum Source {
     User,
 }
 
-/// A creator's shop. The key is the creator's id: one store per creator.
+/// A shop. A store read from a creator's card has the creator's id as its
+/// key; one the user made has a key of its own, and creators or single
+/// items are linked to it (`Catalogue::creator_stores`, `Binding::store`).
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Store {
     pub key: Uuid,
@@ -44,6 +46,10 @@ pub struct Store {
     /// Rendered, never printed.
     #[serde(default)]
     pub logo: Option<Uuid>,
+    /// A logo the user gave from a file or the clipboard: the name of its
+    /// file in the shared `wardrobe/logos` folder. It wins over `logo`.
+    #[serde(default)]
+    pub logo_file: Option<String>,
     #[serde(default)]
     pub marketplace: Option<String>,
     #[serde(default)]
@@ -134,6 +140,8 @@ pub struct Catalogue {
     pub packs: BTreeMap<String, Pack>,
     pub products: BTreeMap<String, Product>,
     pub kits_known: Vec<KnownKit>,
+    /// The user's links: every item of this creator belongs to that store.
+    pub creator_stores: BTreeMap<Uuid, Uuid>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -148,6 +156,8 @@ struct CatalogueFile {
     items: Vec<Product>,
     #[serde(default)]
     kits_known: Vec<KnownKit>,
+    #[serde(default)]
+    creator_stores: BTreeMap<Uuid, Uuid>,
 }
 
 impl Catalogue {
@@ -162,6 +172,11 @@ impl Catalogue {
             packs: file.packs.into_iter().map(|p| (p.key.clone(), p)).collect(),
             products: file.items.into_iter().map(|p| (p.key.clone(), p)).collect(),
             kits_known: file.kits_known,
+            creator_stores: file
+                .creator_stores
+                .into_iter()
+                .filter(|(creator, store)| !creator.is_nil() && !store.is_nil())
+                .collect(),
         })
     }
 
@@ -173,6 +188,7 @@ impl Catalogue {
             packs: self.packs.values().cloned().collect(),
             items: self.products.values().cloned().collect(),
             kits_known: self.kits_known.clone(),
+            creator_stores: self.creator_stores.clone(),
         };
         let mut bytes = serde_json::to_vec_pretty(&file).map_err(|e| e.to_string())?;
         bytes.push(b'\n');
@@ -207,6 +223,11 @@ impl Catalogue {
                 self.kits_known.push(kit);
             }
         }
+        for (creator, store) in other.creator_stores {
+            if !removed.links.contains(&creator) {
+                self.creator_stores.entry(creator).or_insert(store);
+            }
+        }
     }
 }
 
@@ -214,6 +235,8 @@ impl Catalogue {
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Removed {
     pub stores: BTreeSet<Uuid>,
+    /// Creators whose link to a store was taken away.
+    pub links: BTreeSet<Uuid>,
     pub packs: BTreeSet<String>,
     pub products: BTreeSet<String>,
 }
@@ -250,6 +273,16 @@ pub struct Binding {
     pub picture_file: Option<String>,
     #[serde(default)]
     pub favorite: bool,
+    /// The store the user gave this item alone; it wins over the creator's.
+    #[serde(default)]
+    pub store: Option<Uuid>,
+    /// The user's word on whether the item is a demo; unsaid, the card and
+    /// the item's name tell.
+    #[serde(default)]
+    pub demo: Option<bool>,
+    /// The part of the kit the user registered this item as.
+    #[serde(default)]
+    pub part: Option<Part>,
     /// Unix seconds: when the item joined the Wardrobe, last time worn.
     #[serde(default)]
     pub added: i64,
