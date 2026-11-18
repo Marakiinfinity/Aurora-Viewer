@@ -535,6 +535,16 @@ fn attachment_self_menu(ui: &mut Builder, f: &Facts, key: ObjKey) {
         f.object.attachment_item.is_some() && !f.show_original_blocked,
         CtxAction::AttachmentInventory(f.object.attachment_item.unwrap_or_default()),
     );
+    // Aurora's own: only on what the Wardrobe holds, so that the Legacy
+    // Viewer's menu stays as it is for everything else
+    if f.object.in_wardrobe {
+        ui.item_if(
+            "hanger-2-filled",
+            aurora_i18n::tr!("wardrobe-menu-show"),
+            true,
+            CtxAction::WardrobeShow(f.object.attachment_item.unwrap_or_default()),
+        );
+    }
     // Object.SetFavorite Add / Remove, the one that applies
     if let (Some(item), Some(favorite)) = (f.object.attachment_item, f.object.favorite) {
         let (icon, label) = if favorite {

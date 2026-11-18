@@ -749,6 +749,9 @@ pub struct Floater<'a> {
     /// Extra title bar buttons: (Tabler icon, tooltip, set when clicked),
     /// the first one nearest "Collapse".
     pub actions: Vec<(&'a str, &'a str, &'a mut bool)>,
+    /// A choice among the window's modes, as icons in one track of the
+    /// title bar (see `modes`).
+    pub modes: Option<(&'a [TitleMode<'a>], &'a mut usize)>,
     /// No open / close sounds (sound_flags="0", e.g. floater_tools).
     pub silent: bool,
     /// An inset dark title bar and edge-to-edge body for inspector layouts.
@@ -818,6 +821,7 @@ impl<'a> Floater<'a> {
             height_only: false,
             help: None,
             actions: Vec::new(),
+            modes: None,
             silent: false,
             framed_header: None,
             auto_height: false,
@@ -890,6 +894,14 @@ impl<'a> Floater<'a> {
     /// before it); `clicked` is set when pressed.
     pub fn action(mut self, icon: &'a str, tip: &'a str, clicked: &'a mut bool) -> Self {
         self.actions.push((icon, tip, clicked));
+        self
+    }
+
+    /// The window's modes as a track of icons in the title bar, the chosen
+    /// one lit in the accent; a mode that is not available yet is dimmed
+    /// and takes no click. `selected` is set when another one is chosen.
+    pub fn modes(mut self, modes: &'a [TitleMode<'a>], selected: &'a mut usize) -> Self {
+        self.modes = Some((modes, selected));
         self
     }
 
@@ -1377,6 +1389,9 @@ impl<'a> Floater<'a> {
                             if response.clicked() {
                                 **clicked = true;
                             }
+                        }
+                        if let Some((modes, selected)) = &mut self.modes {
+                            title_modes(ui, p, modes, selected);
                         }
                         if let Some(h) = self.help {
                             title_button(ui, p, "help-circle-filled").on_hover_text(h);
@@ -2932,6 +2947,58 @@ fn headless_close(
         });
     ctx.set_sublayer(shown.layer_id, area.response.layer_id);
     area.inner
+}
+
+/// One mode of a window's title bar (`Floater::modes`): its Tabler icon,
+/// its name for the tooltip, and whether it can be chosen.
+#[derive(Clone, Copy)]
+pub struct TitleMode<'a> {
+    pub icon: &'a str,
+    pub tip: &'a str,
+    pub enabled: bool,
+}
+
+/// The modes of a window: icons side by side in one track, the chosen one
+/// on the accent, laid out in the title bar's right-to-left row.
+fn title_modes(ui: &mut egui::Ui, p: &Palette, modes: &[TitleMode<'_>], selected: &mut usize) {
+    const CELL: Vec2 = Vec2::new(24.0, 20.0);
+    let (track, _) = ui.allocate_exact_size(Vec2::new(CELL.x * modes.len() as f32 + 4.0, CELL.y + 2.0), Sense::hover());
+    let radius = ui.visuals().widgets.inactive.corner_radius;
+    ui.painter().rect_filled(track, radius, p.bar);
+    for (n, mode) in modes.iter().enumerate() {
+        let cell = egui::Rect::from_min_size(egui::pos2(track.left() + 2.0 + CELL.x * n as f32, track.top() + 1.0), CELL);
+        let sense = if mode.enabled { Sense::click() } else { Sense::hover() };
+        let response = ui
+            .interact(cell, ui.scope_id().with(("title-mode", n)), sense)
+            .on_hover_text(mode.tip);
+        let on = *selected == n;
+        if on {
+            ui.painter().rect_filled(cell, radius, p.violet);
+        } else if mode.enabled && response.hovered() {
+            ui.painter().rect_filled(cell, radius, p.raised);
+        }
+        let ink = if on {
+            p.on_accent
+        } else if !mode.enabled {
+            p.muted_dim
+        } else if response.hovered() {
+            p.ink
+        } else {
+            p.muted
+        };
+        if let Some(texture) = super::icons::global(mode.icon) {
+            let at = egui::Rect::from_center_size(cell.center(), Vec2::splat(14.0));
+            ui.painter().image(
+                texture.id(),
+                at,
+                egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
+                ink,
+            );
+        }
+        if mode.enabled && response.clicked() {
+            *selected = n;
+        }
+    }
 }
 
 fn title_button(ui: &mut egui::Ui, p: &Palette, icon: &str) -> egui::Response {

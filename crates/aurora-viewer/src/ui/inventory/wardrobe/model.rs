@@ -48,8 +48,12 @@ pub struct Tile {
     pub new: bool,
     pub favorite: bool,
     pub huds: Vec<Uuid>,
-    /// The texture shown: the chosen picture, else the item's own image.
-    pub picture: Option<Uuid>,
+    /// What the card shows: the picture the user chose, else the card's
+    /// texture, else the item's own image.
+    pub picture: Option<Picture>,
+    /// The product record the item belongs to (a card's, or one the user
+    /// made with "Same product as…").
+    pub product: Option<String>,
     pub added: i64,
     pub last_worn: i64,
     pub fits: Vec<String>,
@@ -74,6 +78,30 @@ impl Tile {
 }
 
 type GroupsKey = ((u64, Browse, usize), std::rc::Rc<Vec<Group>>);
+
+/// What a card shows as its picture.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Picture {
+    /// A texture of the grid, by asset: rendered, never printed.
+    Asset(Uuid),
+    /// A picture of the PC, by its file's name (`pictures.rs`).
+    File(String),
+}
+
+/// The picture of one copy, by precedence: the file the user chose, the
+/// texture item a card or the user named, the item's own inventory image.
+fn picture_of(inv: &Inventory, binding: &crate::world::wardrobe::store::Binding, item: Uuid) -> Option<Picture> {
+    if let Some(file) = &binding.picture_file {
+        return Some(Picture::File(file.clone()));
+    }
+    binding
+        .picture
+        .and_then(|texture| inv.items.get(&texture))
+        .map(|texture| texture.asset_id)
+        .filter(|asset| !asset.is_nil())
+        .or_else(|| Some(super::super::thumbnail::image(inv, item)).filter(|image| !image.is_nil()))
+        .map(Picture::Asset)
+}
 
 /// A kit of the "Created for" chip.
 #[derive(Clone, Debug, PartialEq)]
@@ -144,13 +172,7 @@ impl Model {
             }
             let store = wardrobe.store_of(Some(&entry), item.creator);
             let held = crate::world::inventory::actions::held(inv, item);
-            let picture = entry
-                .binding
-                .picture
-                .and_then(|texture| inv.items.get(&texture))
-                .map(|texture| texture.asset_id)
-                .filter(|asset| !asset.is_nil())
-                .or_else(|| (!item.thumbnail.is_nil()).then_some(item.thumbnail));
+            let picture = picture_of(inv, entry.binding, *id);
             use aurora_net::build::perm;
             let tile = Tile {
                 item: *id,
@@ -181,6 +203,7 @@ impl Model {
                 favorite: entry.binding.favorite,
                 huds: shared.index.huds_of(id).to_vec(),
                 picture,
+                product: entry.product.map(|p| p.key.clone()),
                 added: entry.binding.added,
                 last_worn: entry.binding.last_worn,
                 fits: entry.fits().to_vec(),
@@ -216,6 +239,16 @@ impl Model {
                 tile.fits = entry.fits().to_vec();
                 tile.folder = item.parent;
             }
+            // the stack shows the picture of the copy it acts on, else the
+            // first of its copies that has one: never whichever copy the
+            // inventory happened to list first
+            tile.picture = std::iter::once(tile.item).chain(tile.copies.iter().copied()).find_map(|copy| {
+                wardrobe
+                    .account
+                    .bindings
+                    .get(&copy)
+                    .and_then(|binding| picture_of(inv, binding, copy))
+            });
         }
         self.by_item = tiles
             .iter()

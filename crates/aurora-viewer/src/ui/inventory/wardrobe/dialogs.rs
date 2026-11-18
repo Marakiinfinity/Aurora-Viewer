@@ -201,6 +201,23 @@ pub(super) fn show(
     facts: &Facts,
     images: &std::collections::HashMap<Uuid, egui::TextureHandle>,
 ) {
+    // a picture chosen from a file or the clipboard arrived
+    if let Some((item, job)) = &st.wardrobe.picture_job
+        && let Ok(result) = job.try_recv()
+    {
+        let item = *item;
+        st.wardrobe.picture_job = None;
+        match result {
+            Ok(Some(file)) => {
+                set_picture(item, None, Some(file));
+                if matches!(st.wardrobe.dialog, Some(Dialog::Picture { .. })) {
+                    st.wardrobe.dialog = None;
+                }
+            }
+            Ok(None) => {}
+            Err(reason) => st.wardrobe.say(reason, false),
+        }
+    }
     let Some(mut dialog) = st.wardrobe.dialog.take() else { return };
     let mut answer = Answer::Open;
     let item_name = |id: &Uuid| inv.items.get(id).map_or(String::new(), |it| it.name.clone());
@@ -413,18 +430,44 @@ pub(super) fn show(
                         });
                     });
                 ui.add_space(6.0);
-                if widgets::flat_button(ui, p, aurora_i18n::tr!("wardrobe-picture-own")).clicked() {
-                    chosen = Some(None);
+                // a picture of the PC: kept on this computer, never uploaded
+                let working = st.wardrobe.picture_job.is_some();
+                ui.horizontal_wrapped(|ui| {
+                    ui.spacing_mut().item_spacing = Vec2::new(6.0, 4.0);
+                    for (from, icon, key) in [
+                        (pictures::From::File, "folder-filled", "wardrobe-picture-file"),
+                        (pictures::From::Clipboard, "copy-filled", "wardrobe-picture-paste"),
+                    ] {
+                        let label = aurora_i18n::text(key);
+                        let size = Vec2::new(widgets::action_button_fit(ui, icon, label), 26.0);
+                        if widgets::action_button_if(ui, p, icon, label, widgets::ActionKind::Flat, size, !working).clicked() {
+                            st.wardrobe.picture_job = Some((*item, pictures::choose(ui.ctx(), from)));
+                        }
+                    }
+                    if widgets::flat_button(ui, p, aurora_i18n::tr!("wardrobe-picture-own")).clicked() {
+                        chosen = Some(None);
+                    }
+                });
+                if working {
+                    ui.label(
+                        egui::RichText::new(aurora_i18n::tr!("wardrobe-picture-working"))
+                            .size(11.5)
+                            .color(p.muted),
+                    );
+                } else {
+                    ui.label(
+                        egui::RichText::new(aurora_i18n::tr!("wardrobe-picture-local"))
+                            .size(11.0)
+                            .color(p.muted),
+                    );
+                }
+                // Ctrl+V pastes a copied picture
+                if !working && ui.input(|i| i.events.iter().any(|event| matches!(event, egui::Event::Paste(_)))) {
+                    st.wardrobe.picture_job = Some((*item, pictures::choose(ui.ctx(), pictures::From::Clipboard)));
                 }
                 if let Some(picture) = chosen {
                     let item = *item;
-                    wardrobe::with(|shared| {
-                        shared.wardrobe.change(false, |txn| {
-                            let binding = txn.binding(item);
-                            binding.picture = picture;
-                            binding.picture_by_user = picture.is_some();
-                        })
-                    });
+                    set_picture(item, picture, None);
                     answer = Answer::Close;
                 } else {
                     answer = buttons(ui, p, aurora_i18n::tr!("common-close"), true, None);
@@ -438,20 +481,39 @@ pub(super) fn show(
                         .color(p.muted),
                 );
                 ui.add_space(6.0);
-                let rows: Vec<(Uuid, String, String)> = st
+                // a copy has its product's creator: only that creator's
+                // other items are offered, with or without a card
+                let creator = inv.items.get(item).map(|it| it.creator);
+                let mut rows: Vec<(Uuid, String, String)> = st
                     .wardrobe
                     .model
                     .tiles
                     .iter()
-                    .filter(|t| t.pack.is_some() && !t.copies.contains(item))
-                    .map(|t| (t.item, t.name.clone(), t.pack.clone().unwrap_or_default()))
+                    .filter(|t| Some(t.creator) == creator && !t.copies.contains(item))
+                    .map(|t| (t.item, t.name.clone(), t.pack.clone().unwrap_or_else(|| t.folder_name.clone())))
                     .collect();
+                rows.sort_by_key(|row| crate::natural_order::key(&row.1));
+                if rows.is_empty() {
+                    ui.label(
+                        egui::RichText::new(aurora_i18n::tr!("wardrobe-same-empty"))
+                            .size(12.0)
+                            .color(p.warn),
+                    );
+                }
                 if let Some(other) = pick_list(ui, p, search, &rows) {
-                    let item = *item;
-                    let joined = wardrobe::with(|shared| shared.wardrobe.change(true, |txn| matching::same_product(txn, item, other)));
+                    let joined = match (inv.items.get(item), inv.items.get(&other)) {
+                        (Some(copy), Some(product)) => {
+                            wardrobe::with(|shared| shared.wardrobe.change(true, |txn| matching::same_product(txn, copy, product)))
+                        }
+                        _ => false,
+                    };
                     if joined {
+                        // the two now show as one card: opened, the copy chosen
+                        st.wardrobe.show(*item);
                         st.wardrobe
                             .say(aurora_i18n::tr!("wardrobe-same-done", name = item_name(&other)), true);
+                    } else {
+                        st.wardrobe.say(aurora_i18n::tr!("wardrobe-same-refused").to_owned(), false);
                     }
                     answer = Answer::Close;
                 } else {
@@ -537,6 +599,34 @@ pub(super) fn show(
                         .color(p.muted),
                 );
                 ui.add_space(6.0);
+                // a store already known: its name and links, in one click
+                let known: Vec<Store> = wardrobe::with(|shared| {
+                    let mut stores: Vec<Store> = shared
+                        .wardrobe
+                        .catalogue
+                        .stores
+                        .values()
+                        .filter(|s| s.key != *creator)
+                        .cloned()
+                        .collect();
+                    stores.sort_by_key(|s| s.name.to_lowercase());
+                    stores.dedup_by(|a, b| a.name.eq_ignore_ascii_case(&b.name));
+                    stores
+                });
+                if !known.is_empty() {
+                    let button =
+                        egui::Button::new(egui::RichText::new(format!("{}  ⏷", aurora_i18n::tr!("wardrobe-store-existing"))).size(12.0));
+                    menu::button(ui, p, button, |ui| {
+                        for store in known.iter().take(60) {
+                            if menu::item(ui, p, "building-store", &store.name) {
+                                name.clone_from(&store.name);
+                                *marketplace = store.marketplace.clone().unwrap_or_default();
+                                *mainstore = store.mainstore.clone().unwrap_or_default();
+                            }
+                        }
+                    });
+                    ui.add_space(4.0);
+                }
                 ui.label(egui::RichText::new(aurora_i18n::tr!("wardrobe-store-name")).size(12.0).color(p.ink));
                 ui.add(egui::TextEdit::singleline(name).desired_width(f32::INFINITY).char_limit(64));
                 ui.add_space(4.0);
@@ -688,6 +778,24 @@ pub(super) fn show(
                 })
             });
         }
+    }
+}
+
+/// The picture the user gives an item: a texture item of the inventory, a
+/// file of the PC, or neither (the item's own image). A file that no item
+/// shows any more is deleted.
+fn set_picture(item: Uuid, texture: Option<Uuid>, file: Option<String>) {
+    let old = wardrobe::with(|shared| {
+        shared.wardrobe.change(false, |txn| {
+            let binding = txn.binding(item);
+            let old = std::mem::replace(&mut binding.picture_file, file.clone());
+            binding.picture = texture;
+            binding.picture_by_user = texture.is_some() || file.is_some();
+            old.filter(|name| !txn.account().bindings.values().any(|b| b.picture_file.as_ref() == Some(name)))
+        })
+    });
+    if let Some(name) = old {
+        pictures::discard(&name);
     }
 }
 

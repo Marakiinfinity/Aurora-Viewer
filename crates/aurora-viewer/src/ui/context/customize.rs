@@ -291,6 +291,7 @@ fn action_key(action: &CtxAction) -> String {
         CtxAction::Detach(..) => "Detach",
         CtxAction::DetachDelete(..) => "DetachDelete",
         CtxAction::AttachmentInventory(..) => "AttachmentInventory",
+        CtxAction::WardrobeShow(..) => "WardrobeShow",
         CtxAction::EditAttachment(..) => "EditAttachment",
         CtxAction::TouchWorn(..) => "TouchWorn",
         CtxAction::EditWorn(..) => "EditWorn",
