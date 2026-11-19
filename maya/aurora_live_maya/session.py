@@ -13,12 +13,13 @@ import uuid
 import maya.api.OpenMaya as om
 from maya import cmds
 
-from . import capture, client, convert, materials
+from . import capture, client, convert, lods, materials
 
 SOURCES_KEY = "auroraLiveMayaSources"
 BIND_KEY = "auroraLiveMayaBindAxes"
 UNITS_KEY = "auroraLiveMayaUnits"
 UNIT_MODES = ("auto", "cm", "m")
+LODS_KEY = "auroraLiveMayaLods"
 PORT, AUTO, INTERVAL = "auroraLiveMayaPort", "auroraLiveMayaAuto", "auroraLiveMayaInterval"
 DEFAULT_PORT, DEFAULT_INTERVAL = 17655, 2.0
 EDIT_QUIET_SECONDS = 0.15
@@ -55,6 +56,7 @@ class Session:
         self.message = ""
         self.callbacks = []
         self.watched = set()
+        self.posed = set()  # skinned shapes: their dirt is a pose
         self.timer = None
         self.listeners = []
         self.jobs = []
@@ -92,6 +94,19 @@ class Session:
         if mode in UNIT_MODES:
             cmds.fileInfo(UNITS_KEY, mode)
             self.touch()
+
+    def lod_settings(self, identity):
+        """The Import / LOD settings of one source, per level."""
+        values = cmds.fileInfo(LODS_KEY, query=True)
+        stored = convert.lod_settings_parse(values[0] if values else "").get(identity, {})
+        return {level: stored.get(level) or convert.lod_default(level) for level, _ratio in convert.LOD_LEVELS}
+
+    def set_lod_settings(self, identity, levels):
+        values = cmds.fileInfo(LODS_KEY, query=True)
+        stored = convert.lod_settings_parse(values[0] if values else "")
+        stored = {key: value for key, value in stored.items() if key in self.sources}
+        stored[identity] = levels
+        cmds.fileInfo(LODS_KEY, convert.lod_settings_format(stored))
 
     def node(self, identity):
         """The transform of a stored id, or None while it is missing."""
@@ -136,8 +151,8 @@ class Session:
     def connect(self, port):
         self.disconnect()
         set_option(PORT, int(port))
-        # The Maya plug-in negotiates none of the Blender-only controls.
-        self.client = client.Client(int(port), capabilities=())
+        # Import / LOD only: shape transfer and its apply stay Blender's.
+        self.client = client.Client(int(port), capabilities=("import-lods",))
         self.revision, self.last_content, self.forced = 0, None, True
         self._start_timer()
 
@@ -163,7 +178,9 @@ class Session:
         self.forced = True
         materials.invalidate()
 
-    def _dirty_plug(self, _node, plug, *_args):
+    def _dirty_plug(self, node, plug, *_args):
+        if node.hasFn(om.MFn.kMesh) and om.MFnDagNode(node).fullPathName() in self.posed:
+            return
         name = plug.partialName(includeNodeName=False, useLongNames=True)
         if om.MFnDependencyNode(plug.node()).typeName == "skinCluster" and name.startswith(POSE_PLUGS):
             return
@@ -177,6 +194,7 @@ class Session:
     def _nodes(self):
         """Every node a source's capture reads."""
         nodes = set()
+        self.posed = set()
         for identity in self.sources:
             transform = self.node(identity)
             if not transform:
@@ -185,14 +203,17 @@ class Session:
             if not shape:
                 continue
             skin = capture.skin_of(shape)
-            nodes.add(transform)
-            nodes.update(cmds.listRelatives(transform, allParents=True, fullPath=True) or [])
             if skin:
-                # The skin's input changes with every edit before it; the shape
-                # itself would also change with each pose.
-                nodes.add(skin)
+                # The skin's input changes with every edit before it; the shape,
+                # its transform and the rig move with each pose, which a
+                # skinned capture ignores. The shape stays watched for its
+                # material assignments only.
+                nodes.update([skin, shape])
+                self.posed.add(shape)
             else:
-                nodes.add(shape)
+                # A static capture keeps the world rotation and scale, and a
+                # linkset the offsets: the transform and every ancestor count.
+                nodes.update([shape, transform] + _ancestors(transform))
             for group in set(cmds.listConnections(shape, type="shadingEngine") or []):
                 nodes.update(materials.history(group))
         return nodes
@@ -220,7 +241,15 @@ class Session:
 
     def _clear_callbacks(self):
         if self.callbacks:
-            om.MMessage.removeCallbacks(self.callbacks)
+            try:
+                om.MMessage.removeCallbacks(self.callbacks)
+            except RuntimeError:
+                # Nodes of a closed scene take their callbacks with them.
+                for callback in self.callbacks:
+                    try:
+                        om.MMessage.removeCallback(callback)
+                    except RuntimeError:
+                        pass
         self.callbacks = []
         self.watched = set()
 
@@ -266,6 +295,9 @@ class Session:
         _status, supported = self.client.state()
         if not supported:
             return
+        request = self.client.take_import()
+        if request is not None:
+            self._import(request, supported)
         now = time.monotonic()
         auto = bool(option(AUTO, 1))
         interval = max(0.1, float(option(INTERVAL, DEFAULT_INTERVAL)))
@@ -281,11 +313,29 @@ class Session:
                 self.revision += 1
                 self.client.submit(value)
                 self.last_content = content
-        except (ValueError, RuntimeError) as error:
-            self.message = str(error)
+        except Exception as error:  # Any failure must show, not stop the timer.
+            self.message = str(error) or type(error).__name__
         finally:
             self.last_capture = time.monotonic()
-            self._rewatch()
+            try:
+                self._rewatch()
+            except Exception as error:
+                self.message = str(error) or type(error).__name__
+
+    def _import(self, request, supported):
+        """Answer Aurora's Import button with the four prepared levels."""
+        try:
+            identity = next((key for key in self.sources if _uuid_for(key) == str(request.get("source"))), None)
+            transform = self.node(identity) if identity else None
+            if transform is None:
+                raise ValueError("The requested mesh is no longer in this scene's live list")
+            unit = capture.scene_unit(self.units(), [self.node(key) for key in self.sources if self.node(key)])
+            base = convert.base_frame(capture.up_axis(), unit)
+            result = lods.prepare(request, transform, self.lod_settings(identity), supported, self.client.rest_axes(),
+                                  base, self.bind_axes())
+        except Exception as error:  # Aurora waits for an answer: always send one.
+            result = dict(request, error=(str(error) or type(error).__name__)[:512])
+        self.client.import_result(result)
 
     def _issues(self):
         revision, issues = self.client.issues()
