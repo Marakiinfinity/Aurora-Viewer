@@ -90,20 +90,32 @@ pub enum Picture {
     Asset(Uuid),
     /// A picture of the PC, by its file's name (`pictures.rs`).
     File(String),
+    /// The look kept while the item was worn (`look.rs`): a file too, but
+    /// one the live look replaces while the item is worn.
+    Kept(String),
 }
 
 /// The picture of one copy, by precedence: the file the user chose, the
-/// texture item a card or the user named, the item's own inventory image.
+/// texture item a card or the user named, the look kept while the item was
+/// worn, the item's own inventory image.
 fn picture_of(inv: &Inventory, binding: &crate::world::wardrobe::store::Binding, item: Uuid) -> Option<Picture> {
     if let Some(file) = &binding.picture_file {
         return Some(Picture::File(file.clone()));
     }
-    binding
+    let chosen = binding
         .picture
         .and_then(|texture| inv.items.get(&texture))
         .map(|texture| texture.asset_id)
-        .filter(|asset| !asset.is_nil())
-        .or_else(|| Some(super::super::thumbnail::image(inv, item)).filter(|image| !image.is_nil()))
+        .filter(|asset| !asset.is_nil());
+    if let Some(asset) = chosen {
+        return Some(Picture::Asset(asset));
+    }
+    // the look kept while it was worn, then the item's own image
+    if let Some(file) = &binding.auto_picture {
+        return Some(Picture::Kept(file.clone()));
+    }
+    Some(super::super::thumbnail::image(inv, item))
+        .filter(|image| !image.is_nil())
         .map(Picture::Asset)
 }
 
@@ -689,6 +701,18 @@ mod tests {
 
     fn model(tiles: Vec<Tile>) -> Model {
         Model { tiles, ..Model::default() }
+    }
+
+    #[test]
+    fn the_kept_look_shows_after_the_users_picture_and_before_nothing() {
+        let inv = Inventory::default();
+        let item = Uuid::new_v4();
+        let mut binding = crate::world::wardrobe::store::Binding::default();
+        assert_eq!(picture_of(&inv, &binding, item), None);
+        binding.auto_picture = Some("kept.png".into());
+        assert_eq!(picture_of(&inv, &binding, item), Some(Picture::Kept("kept.png".into())));
+        binding.picture_file = Some("mine.png".into());
+        assert_eq!(picture_of(&inv, &binding, item), Some(Picture::File("mine.png".into())));
     }
 
     fn names_of(list: &[(usize, Hit)], m: &Model) -> Vec<String> {

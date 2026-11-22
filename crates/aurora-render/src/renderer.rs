@@ -8275,10 +8275,11 @@ impl Backend {
         // in `films`, a later frame's result once the GPU is done)
         let film = self.film_reads.end_frame();
         let snapshot = self.end_snapshot() && !cube_face && !film;
-        if self.film_reads.busy() {
+        if self.film_reads.busy() || self.previews.capturing() {
             self.lost.poll(&self.device);
         }
         let films = self.film_reads.answers();
+        self.previews.answer_captures();
         FrameResult {
             index,
             stats,
@@ -9185,6 +9186,8 @@ impl Backend {
                 .flatten();
             cmds.push(encoder.finish());
             crate::device_lost::submit_tracked(&self.lost, &self.queue, index, upload_cmds.into_iter().chain(cmds));
+            // a Wardrobe picture drawn by the interface pass maps too
+            self.previews.map_captures();
             if let FrameTarget::Surface(t) = surface_tex {
                 self.queue.present(t);
                 stats.presented = true;
@@ -13673,6 +13676,7 @@ impl Backend {
         let captured = capture.and_then(|capture| self.read_capture(capture, f.cutout));
         // a film frame's copy is submitted: its mapping can begin
         self.film_reads.map();
+        self.previews.map_captures();
 
         if let (Some(t), Some(slot)) = (&mut self.timer, timer_slot) {
             let ready = t.readback[slot].1.clone();

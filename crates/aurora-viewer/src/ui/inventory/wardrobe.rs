@@ -416,6 +416,24 @@ pub(super) fn contents(
         st.wardrobe.reversed = shared.wardrobe.account.view.reversed;
         true
     });
+    if ready {
+        // the worn copies, whose look is kept as their picture (`look.rs`);
+        // a picture the user chose is not replaced
+        let worn: Vec<(Uuid, Option<categories::Tag>)> = st
+            .wardrobe
+            .model
+            .tiles
+            .iter()
+            .filter(|tile| !matches!(tile.picture, Some(model::Picture::File(_))))
+            .flat_map(|tile| {
+                tile.copies
+                    .iter()
+                    .filter(|copy| facts.worn.contains(*copy))
+                    .map(|copy| (*copy, tile.main().cloned()))
+            })
+            .collect();
+        st.wardrobe.live.keep(ui.ctx(), p, &worn);
+    }
     if !ready {
         ui.add_space(24.0);
         ui.vertical_centered(|ui| ui.label(egui::RichText::new(aurora_i18n::tr!("wardrobe-loading")).color(p.muted)));
