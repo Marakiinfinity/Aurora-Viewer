@@ -159,6 +159,24 @@ pub fn paint_swatch(ui: &mut egui::Ui, id: egui::Id, model: Arc<Model>, view: Vi
     paint_tile(ui, id, model, view, size, egui::Sense::click_and_drag())
 }
 
+/// A preview drawn in a rectangle the caller already laid out (a card of a
+/// grid). Every rectangle painted under one `id` shows the same picture
+/// from one target, so tiles that share a framing share their drawing;
+/// they must then share their size too.
+pub fn paint_in(painter: &egui::Painter, rect: egui::Rect, id: egui::Id, model: Arc<Model>, view: View) {
+    if painter.clip_rect().intersects(rect) {
+        painter.add(egui::Shape::Callback(egui::PaintCallback {
+            rect,
+            callback: Arc::new(Region {
+                id,
+                model,
+                view,
+                pose: None,
+            }),
+        }));
+    }
+}
+
 fn paint_tile(ui: &mut egui::Ui, id: egui::Id, model: Arc<Model>, view: View, size: egui::Vec2, sense: egui::Sense) -> egui::Response {
     let (rect, response) = ui.allocate_exact_size(size, sense);
     if ui.is_rect_visible(rect) {

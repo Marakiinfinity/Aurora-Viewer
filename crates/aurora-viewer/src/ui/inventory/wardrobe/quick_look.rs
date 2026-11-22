@@ -42,7 +42,16 @@ pub(super) fn show(
         ui.set_width(300.0);
         let (rect, _) = ui.allocate_exact_size(Vec2::splat(256.0).min(Vec2::splat(ui.available_width())), Sense::hover());
         let rect = Rect::from_center_size(egui::pos2(ui.max_rect().center().x, rect.center().y), rect.size());
-        grid::paint_picture(ui, p, rect, &tile, images, &mut st.wanted_images, 1.0);
+        grid::paint_picture(
+            ui,
+            p,
+            rect,
+            &tile,
+            images,
+            &mut st.wanted_images,
+            1.0,
+            worn.then_some(&st.wardrobe.live),
+        );
         ui.add_space(8.0);
         tips::lines(ui, p, &tile, item, inv, facts, false);
         ui.add_space(8.0);

@@ -13,6 +13,7 @@ pub mod creator;
 mod dialogs;
 mod framing;
 mod grid;
+pub mod look;
 pub mod model;
 mod pictures;
 mod quick_look;
@@ -70,6 +71,9 @@ pub struct Preferences {
     /// The item card tooltip, and the one-line hints on buttons and chips.
     pub tips: bool,
     pub hints: bool,
+    /// A worn item shows the user's own avatar as it looks now, framed on
+    /// the item (`look.rs`), unless the user chose its picture.
+    pub look: bool,
 }
 
 impl Default for Preferences {
@@ -80,6 +84,7 @@ impl Default for Preferences {
             tile: 112,
             tips: true,
             hints: false,
+            look: true,
         }
     }
 }
@@ -156,6 +161,8 @@ pub struct State {
     pub leave: bool,
     /// A creator's profile was asked: opened by the app.
     pub profile: Option<Uuid>,
+    /// The pictures of worn items drawn from the avatar.
+    pub live: look::Live,
 }
 
 impl State {
@@ -398,6 +405,7 @@ pub(super) fn contents(
     actions: &mut Vec<InvAction>,
 ) {
     let width = Width::of(ui.available_width());
+    st.wardrobe.live.enabled = prefs.wardrobe.look;
     let ready = wardrobe::with(|shared| {
         if !shared.wardrobe.ready() {
             return false;
@@ -935,6 +943,7 @@ fn tools_row(ui: &mut egui::Ui, p: &Palette, st: &mut InventoryUi, prefs: &mut I
         let mut stacks = prefs.wardrobe.stacks;
         let mut tips = prefs.wardrobe.tips;
         let mut hints = prefs.wardrobe.hints;
+        let mut look = prefs.wardrobe.look;
         let mut creator = false;
         let mut unsorted = false;
         let mut stores = false;
@@ -953,11 +962,20 @@ fn tools_row(ui: &mut egui::Ui, p: &Palette, st: &mut InventoryUi, prefs: &mut I
             menu::toggle(ui, p, "stack-2-filled", aurora_i18n::tr!("wardrobe-pref-stacks"), &mut stacks);
             menu::toggle(ui, p, "info-circle-filled", aurora_i18n::tr!("wardrobe-pref-tips"), &mut tips);
             menu::toggle(ui, p, "info-circle-filled", aurora_i18n::tr!("wardrobe-pref-hints"), &mut hints);
+            menu::toggle(ui, p, "man-filled", aurora_i18n::tr!("wardrobe-pref-look"), &mut look);
         });
-        if (stacks, tips, hints) != (prefs.wardrobe.stacks, prefs.wardrobe.tips, prefs.wardrobe.hints) {
+        if (stacks, tips, hints, look)
+            != (
+                prefs.wardrobe.stacks,
+                prefs.wardrobe.tips,
+                prefs.wardrobe.hints,
+                prefs.wardrobe.look,
+            )
+        {
             prefs.wardrobe.stacks = stacks;
             prefs.wardrobe.tips = tips;
             prefs.wardrobe.hints = hints;
+            prefs.wardrobe.look = look;
             st.preferences_dirty = true;
         }
         if creator {
@@ -1374,7 +1392,16 @@ fn selection_bar(
         ui.set_height(48.0);
         ui.spacing_mut().item_spacing.x = 8.0;
         let (rect, _) = ui.allocate_exact_size(Vec2::splat(44.0), Sense::hover());
-        grid::paint_picture(ui, p, rect, &tile, images, &mut st.wanted_images, 1.0);
+        grid::paint_picture(
+            ui,
+            p,
+            rect,
+            &tile,
+            images,
+            &mut st.wanted_images,
+            1.0,
+            worn.then_some(&st.wardrobe.live),
+        );
         // the store's mark, in the corner of the picture
         let mark = Rect::from_min_size(rect.right_bottom() - Vec2::splat(16.0), Vec2::splat(16.0));
         grid::store_mark(ui, p, mark, &tile, images, &mut st.wanted_images);
@@ -1639,6 +1666,7 @@ fn details(
         return;
     };
     let item = st.wardrobe.selected.unwrap_or(tile.item);
+    let worn = facts.worn.contains(&item);
     st.wardrobe.wanted_names.insert(tile.creator);
     egui::ScrollArea::vertical()
         .id_salt("wardrobe_details_scroll")
@@ -1646,7 +1674,16 @@ fn details(
         .show(ui, |ui| {
             let side = ui.available_width().min(260.0);
             let (rect, _) = ui.allocate_exact_size(Vec2::splat(side), Sense::hover());
-            grid::paint_picture(ui, p, rect, &tile, images, &mut st.wanted_images, 1.0);
+            grid::paint_picture(
+                ui,
+                p,
+                rect,
+                &tile,
+                images,
+                &mut st.wanted_images,
+                1.0,
+                worn.then_some(&st.wardrobe.live),
+            );
             ui.add_space(8.0);
             tips::lines(ui, p, &tile, item, inv, facts, true);
             ui.add_space(8.0);

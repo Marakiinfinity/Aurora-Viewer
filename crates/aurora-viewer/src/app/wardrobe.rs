@@ -33,6 +33,84 @@ pub(crate) struct Cards {
     /// delivery of several boxes, or the first login after cards arrived,
     /// says so once.
     batch: Option<Batch>,
+    /// The avatar's framings for the pictures of worn items.
+    look: Look,
+}
+
+/// The look is captured again at most this often while worn cards show.
+const LOOK_EVERY: Duration = Duration::from_millis(500);
+
+/// A look built off the frame thread: its key, the shape it was built
+/// with, the snapshot (kept to reuse its decoded meshes and textures) and
+/// the framings.
+type Built = (
+    u64,
+    Vec<u8>,
+    crate::shape_editor::preview::Snapshot,
+    ui::inventory::wardrobe::look::Looks,
+);
+
+/// The pictures of worn items (`ui/inventory/wardrobe/look.rs`): the
+/// avatar's look is captured like the shape editor's hints
+/// (`shape_editor::preview`), decoded and framed on a worker, and built
+/// again only when the bakes, the worn meshes, their textures or the shape
+/// change.
+struct Look {
+    snapshot: Option<Arc<crate::shape_editor::preview::Snapshot>>,
+    built: Option<(u64, Vec<u8>)>,
+    pending: bool,
+    checked: Option<Instant>,
+    tx: std::sync::mpsc::Sender<Built>,
+    rx: std::sync::mpsc::Receiver<Built>,
+}
+
+impl Default for Look {
+    fn default() -> Self {
+        let (tx, rx) = std::sync::mpsc::channel();
+        Self {
+            snapshot: None,
+            built: None,
+            pending: false,
+            checked: None,
+            tx,
+            rx,
+        }
+    }
+}
+
+/// The framings of one look: the avatar's parts and joints, centred on
+/// each framing's joints.
+fn frame_look(
+    parts: Vec<aurora_render::preview::Part>,
+    joints: &[Mat4],
+    rig: &crate::scene::anim::Rig,
+) -> ui::inventory::wardrobe::look::Looks {
+    use crate::world::wardrobe::look::SHOTS;
+    SHOTS
+        .iter()
+        .map(|shot| {
+            let aim = shot.aim();
+            let points: Vec<Vec3> = aim
+                .joints
+                .iter()
+                .filter_map(|name| rig.names.get(*name).and_then(|j| joints.get(*j)))
+                .map(|m| m.w_axis.truncate())
+                .collect();
+            let center = if points.is_empty() {
+                Vec3::Z
+            } else {
+                points.iter().copied().sum::<Vec3>() / points.len() as f32
+            } + Vec3::Z * aim.lift;
+            (
+                *shot,
+                Arc::new(aurora_render::preview::Model {
+                    parts: parts.clone(),
+                    center,
+                    radius: 1.0,
+                }),
+            )
+        })
+        .collect()
 }
 
 /// Cards applied in a row share one toast for this long after the last.
@@ -246,6 +324,50 @@ impl App {
             if worn.iter().any(|id| !shared.wardrobe.account.worn_huds.contains(id)) {
                 shared.wardrobe.change(false, |txn| txn.account_mut().worn_huds.extend(worn));
             }
+        });
+    }
+
+    /// Keeps the avatar's framings up to date while a worn card of the
+    /// Wardrobe is on screen (`ui/inventory/wardrobe/look.rs`).
+    pub(crate) fn wardrobe_look_tick(&mut self) {
+        let live = &mut self.inventory_ui.wardrobe.live;
+        while let Ok((key, values, snapshot, looks)) = self.wardrobe_cards.look.rx.try_recv() {
+            self.wardrobe_cards.look.pending = false;
+            let old = self.wardrobe_cards.look.snapshot.replace(Arc::new(snapshot));
+            self.scene.jobs.discard(old);
+            let old = live.looks.replace(Arc::new(looks));
+            self.scene.jobs.discard(old);
+            self.wardrobe_cards.look.built = Some((key, values));
+        }
+        if !live.take_wanted() || self.world.agent_id.is_nil() {
+            return;
+        }
+        let look = &mut self.wardrobe_cards.look;
+        if look.pending || look.checked.is_some_and(|at| at.elapsed() < LOOK_EVERY) {
+            return;
+        }
+        look.checked = Some(Instant::now());
+        let input = crate::shape_editor::preview::Input::capture(&self.world, &self.scene);
+        let values = self.world.server_visual_params().to_vec();
+        if look
+            .built
+            .as_ref()
+            .is_some_and(|(key, built)| *key == input.key && *built == values)
+        {
+            return;
+        }
+        look.pending = true;
+        let key = input.key;
+        let previous = look.snapshot.clone();
+        let lib = self.world.avatar_lib.clone();
+        let tx = look.tx.clone();
+        let ctx = self.egui_ctx.clone();
+        self.scene.jobs.run(move || {
+            let snapshot = input.prepare(previous);
+            let (parts, joints) = snapshot.build(&lib, &values, &Default::default());
+            let looks = frame_look(parts, &joints, &lib.rig);
+            let _ = tx.send((key, values, snapshot, looks));
+            ctx.request_repaint();
         });
     }
 

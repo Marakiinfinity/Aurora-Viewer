@@ -17,6 +17,7 @@ pub mod categories;
 pub mod demo;
 pub mod fit;
 pub mod huds;
+pub mod look;
 pub mod matching;
 pub mod scan;
 pub mod sort;

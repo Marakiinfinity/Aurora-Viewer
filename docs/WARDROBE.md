@@ -511,6 +511,22 @@ square is what is kept, 512 pixels wide, as a PNG in the account's
 no texture is created on the grid. A stack shows the picture of the copy
 it acts on, else the first of its copies that has one.
 
+**Worn items show the avatar.** The card of a worn item (and its Quick
+Look, selection bar and details) shows the user's own avatar as it looks
+now, framed on what the item covers: the head for hair, heads, ears,
+earrings, glasses and hats; the neck for necklaces and scarves; the torso
+for tops and bags; the waist for belts; the legs for bottoms; the feet for
+shoes; a hand for rings, bracelets, gloves and nails; the tail and the
+wings from behind; the whole avatar for anything else. A HUD has none. A
+picture the user chose still wins. The look is captured as the shape
+editor's hints capture it (bakes, worn meshes and their textures, the
+pose frozen once), decoded and framed on a worker, and built again only
+when one of them or the shape changes; every card of one framing and size
+shares one drawing of the GPU preview pass, with no readback. "Show my
+look on worn items" in the Wardrobe's menu turns it off. An item taken
+off goes back to its own picture: keeping the last look needs a readback
+of the preview pass, left for later (section 15).
+
 **Show in Wardrobe**: in the list's menu of an item that is in the
 Wardrobe, and in the world's menu of a worn object that is. The window
 turns to the Wardrobe with every filter aside, the item selected and
@@ -644,6 +660,8 @@ textures held with full permissions only, the one id a card carries.
 
 Left for later, each a ⬜ line of `TASKS.md`:
 
+- The picture of a worn item kept once it is taken off, and an unworn
+  system layer drawn on the avatar through the local bake composer.
 - The Wardrobe cards and the creator tool, switched off by
   `world::wardrobe::CARDS` (top of this page): switched back on once the
   team decides to ship them.

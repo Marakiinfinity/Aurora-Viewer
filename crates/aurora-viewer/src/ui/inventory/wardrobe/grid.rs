@@ -25,7 +25,8 @@ enum Row {
 
 /// The picture of a tile in `rect`: its texture, asked for when it is not
 /// loaded yet, else the icon of its main category on a neutral face.
-/// `alpha` dims an item that was not created for what is worn.
+/// `alpha` dims an item that was not created for what is worn; `live`,
+/// given for a worn item, draws the avatar wearing it.
 pub(in super::super) fn paint_picture(
     ui: &egui::Ui,
     p: &Palette,
@@ -34,9 +35,19 @@ pub(in super::super) fn paint_picture(
     images: &std::collections::HashMap<Uuid, egui::TextureHandle>,
     wanted: &mut HashSet<Uuid>,
     alpha: f32,
+    live: Option<&look::Live>,
 ) {
     let radius = ui.visuals().window_corner_radius;
     ui.painter().rect_filled(rect, radius, p.raised);
+    // a worn item: the avatar as it looks now, unless the user chose a
+    // picture of their own
+    let chosen = matches!(tile.picture, Some(model::Picture::File(_)));
+    if !chosen && live.is_some_and(|live| look::paint(ui, p, rect, tile.main(), live)) {
+        if alpha < 1.0 {
+            ui.painter().rect_filled(rect, radius, p.panel.gamma_multiply(1.0 - alpha));
+        }
+        return;
+    }
     let local;
     let texture = match &tile.picture {
         Some(model::Picture::Asset(asset)) => images.get(asset).or_else(|| {
@@ -297,6 +308,7 @@ pub(super) fn show(
                                 open_stack: st.wardrobe.open_stack,
                                 trying: st.wardrobe.trying.as_ref().map(|t| t.item),
                                 names: &st.wardrobe.copy_names,
+                                live: &st.wardrobe.live,
                             };
                             let stack = paint_cell(
                                 ui,
@@ -431,7 +443,7 @@ fn paint_cell(
     let opened = tile.copies.len() > 1 && view.open_stack == Some(tile.item);
     // a copy of an open stack shows its own picture and state
     let dim = if tile.fit.fits() { 1.0 } else { 0.55 };
-    paint_picture(ui, p, picture, tile, images, wanted, dim);
+    paint_picture(ui, p, picture, tile, images, wanted, dim, worn.then_some(view.live));
     let radius = ui.visuals().window_corner_radius;
     let edge = if selected {
         egui::Stroke::new(2.0, p.violet)
@@ -581,6 +593,7 @@ struct CellView<'a> {
     trying: Option<Uuid>,
     /// The names of the copies of an open stack.
     names: &'a std::collections::HashMap<Uuid, String>,
+    live: &'a look::Live,
 }
 
 /// The arrows move the selection, Enter wears or takes off, Space opens
