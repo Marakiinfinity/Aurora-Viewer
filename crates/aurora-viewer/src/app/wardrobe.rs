@@ -335,7 +335,10 @@ impl App {
             self.wardrobe_cards.look.pending = false;
             let old = self.wardrobe_cards.look.snapshot.replace(Arc::new(snapshot));
             self.scene.jobs.discard(old);
-            let old = live.looks.replace(Arc::new(looks));
+            // the shape is part of the look a picture is kept from
+            let mut hasher = std::collections::hash_map::DefaultHasher::new();
+            std::hash::Hash::hash(&(key, &values), &mut hasher);
+            let old = live.arrived(looks, std::hash::Hasher::finish(&hasher));
             self.scene.jobs.discard(old);
             self.wardrobe_cards.look.built = Some((key, values));
         }

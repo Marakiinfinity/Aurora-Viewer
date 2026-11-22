@@ -54,7 +54,7 @@ pub(in super::super) fn paint_picture(
             wanted.insert(*asset);
             None
         }),
-        Some(model::Picture::File(name)) => {
+        Some(model::Picture::File(name) | model::Picture::Kept(name)) => {
             local = pictures::texture(ui.ctx(), pictures::Kind::Item, name);
             local.as_ref()
         }

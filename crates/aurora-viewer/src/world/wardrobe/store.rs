@@ -271,6 +271,12 @@ pub struct Binding {
     /// its file in the account's picture folder. It wins over `picture`.
     #[serde(default)]
     pub picture_file: Option<String>,
+    /// The look of the avatar wearing the item, kept by the Wardrobe while
+    /// it was worn (`ui/inventory/wardrobe/look.rs`): the name of its file
+    /// in the account's picture folder. Shown once the item is taken off,
+    /// after the user's picture and texture.
+    #[serde(default)]
+    pub auto_picture: Option<String>,
     #[serde(default)]
     pub favorite: bool,
     /// The store the user gave this item alone; it wins over the creator's.

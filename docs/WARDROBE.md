@@ -523,9 +523,17 @@ editor's hints capture it (bakes, worn meshes and their textures, the
 pose frozen once), decoded and framed on a worker, and built again only
 when one of them or the shape changes; every card of one framing and size
 shares one drawing of the GPU preview pass, with no readback. "Show my
-look on worn items" in the Wardrobe's menu turns it off. An item taken
-off goes back to its own picture: keeping the last look needs a readback
-of the preview pass, left for later (section 15).
+look on worn items" in the Wardrobe's menu turns it off.
+
+**The look is kept.** Once a look has not changed for 4 seconds, each
+worn item's framing is drawn once more offscreen at 512 pixels, read back
+without waiting for the GPU (`aurora_render::preview::capture`, like a
+film frame) and saved as a PNG in the account's `wardrobe-pictures`
+folder, one item at a time; nothing is uploaded. The item shows it once it
+is taken off, after a picture or texture the user chose and before its
+inventory image (`Binding::auto_picture`). A new look replaces the file;
+an item whose picture the user chose is not captured. The demo keeps them
+in memory.
 
 **Show in Wardrobe**: in the list's menu of an item that is in the
 Wardrobe, and in the world's menu of a worn object that is. The window
@@ -660,8 +668,8 @@ textures held with full permissions only, the one id a card carries.
 
 Left for later, each a ⬜ line of `TASKS.md`:
 
-- The picture of a worn item kept once it is taken off, and an unworn
-  system layer drawn on the avatar through the local bake composer.
+- An unworn system layer drawn on the avatar through the local bake
+  composer.
 - The Wardrobe cards and the creator tool, switched off by
   `world::wardrobe::CARDS` (top of this page): switched back on once the
   team decides to ship them.

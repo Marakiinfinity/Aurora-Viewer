@@ -274,6 +274,7 @@ struct Target {
     model: Arc<Model>,
     parts: Vec<GpuPart>,
     size: [u32; 2],
+    color_texture: wgpu::Texture,
     color: wgpu::TextureView,
     depth: wgpu::TextureView,
     texture: egui::TextureId,
@@ -287,6 +288,169 @@ pub(crate) struct Cache {
     /// The panorama viewers (panorama.rs), drawn the same way.
     pano: crate::panorama::Cache,
     meshes: crate::preview_mesh::Cache,
+    /// The captures on their way back (`capture`).
+    captures: Vec<PendingCapture>,
+}
+
+/// A preview read back once: its RGBA8 pixels, gamma-encoded like the
+/// pictures egui shows.
+pub struct Captured {
+    pub size: [u32; 2],
+    pub rgba: Vec<u8>,
+}
+
+struct CaptureRequest {
+    model: Arc<Model>,
+    view: View,
+    side: u32,
+    reply: std::sync::mpsc::Sender<Option<Captured>>,
+}
+
+/// The captures asked since the last frame.
+static CAPTURES: std::sync::Mutex<Vec<CaptureRequest>> = std::sync::Mutex::new(Vec::new());
+/// Captures drawn in one frame, and the largest side of one.
+const CAPTURES_PER_FRAME: usize = 2;
+const CAPTURE_MAX: u32 = 1024;
+
+const MAPPING: u8 = 0;
+const MAPPED: u8 = 1;
+const FAILED: u8 = 2;
+
+struct PendingCapture {
+    buffer: wgpu::Buffer,
+    layout: crate::film_readback::Layout,
+    state: Arc<std::sync::atomic::AtomicU8>,
+    /// Its mapping was begun (after the frame's submit).
+    mapping: bool,
+    reply: std::sync::mpsc::Sender<Option<Captured>>,
+}
+
+/// A square picture of `model` seen through `view`, drawn once offscreen
+/// with the next frame and read back without waiting for the GPU (like a
+/// film frame, `film_readback.rs`): the answer comes a frame or two later,
+/// `None` if it could not be drawn or read. The Wardrobe keeps the look of
+/// a worn item this way.
+pub fn capture(model: Arc<Model>, view: View, side: u32) -> std::sync::mpsc::Receiver<Option<Captured>> {
+    let (reply, answer) = std::sync::mpsc::channel();
+    let request = CaptureRequest {
+        model,
+        view,
+        side: side.clamp(16, CAPTURE_MAX),
+        reply,
+    };
+    match CAPTURES.lock() {
+        Ok(mut queue) => queue.push(request),
+        Err(_) => {
+            let _ = request.reply.send(None);
+        }
+    }
+    answer
+}
+
+impl Cache {
+    /// The captures asked since the last frame, a few at a time: each is
+    /// drawn into a target of its own and copied into a readback buffer.
+    fn draw_captures(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        encoder: &mut wgpu::CommandEncoder,
+        egui: &mut egui_wgpu::Renderer,
+    ) {
+        let requests: Vec<CaptureRequest> = match CAPTURES.lock() {
+            Ok(mut queue) => {
+                let count = queue.len().min(CAPTURES_PER_FRAME);
+                queue.drain(..count).collect()
+            }
+            Err(_) => Vec::new(),
+        };
+        for request in requests {
+            let pipeline = self.pipeline.get_or_insert_with(|| Pipelines::new(device));
+            let size = [request.side; 2];
+            let mut target = Target::new(device, queue, egui, pipeline, request.model, size);
+            target.draw(queue, encoder, pipeline, request.view, None);
+            // the egui texture is not shown: only the copy is kept
+            egui.free_texture(&target.texture);
+            let layout = crate::film_readback::Layout::new(size[0], size[1], false, false);
+            let buffer = device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("Preview capture"),
+                size: crate::readback::readback_size(layout.bytes()),
+                usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+                mapped_at_creation: false,
+            });
+            encoder.copy_texture_to_buffer(
+                wgpu::TexelCopyTextureInfo {
+                    texture: &target.color_texture,
+                    mip_level: 0,
+                    origin: wgpu::Origin3d::ZERO,
+                    aspect: wgpu::TextureAspect::All,
+                },
+                wgpu::TexelCopyBufferInfo {
+                    buffer: &buffer,
+                    layout: wgpu::TexelCopyBufferLayout {
+                        offset: 0,
+                        bytes_per_row: Some(layout.row),
+                        rows_per_image: Some(layout.height),
+                    },
+                },
+                wgpu::Extent3d {
+                    width: size[0],
+                    height: size[1],
+                    depth_or_array_layers: 1,
+                },
+            );
+            self.captures.push(PendingCapture {
+                buffer,
+                layout,
+                state: Arc::new(std::sync::atomic::AtomicU8::new(MAPPING)),
+                mapping: false,
+                reply: request.reply,
+            });
+        }
+    }
+
+    /// After the frame's submit: the mappings of its captures begin.
+    pub(crate) fn map_captures(&mut self) {
+        for capture in self.captures.iter_mut().filter(|c| !c.mapping) {
+            capture.mapping = true;
+            let done = capture.state.clone();
+            capture.buffer.map_async(wgpu::MapMode::Read, .., move |result| {
+                done.store(if result.is_ok() { MAPPED } else { FAILED }, std::sync::atomic::Ordering::Release);
+            });
+        }
+    }
+
+    /// Some capture is on its way: the device is to be polled.
+    pub(crate) fn capturing(&self) -> bool {
+        self.captures.iter().any(|c| c.mapping)
+    }
+
+    /// Hands back the captures whose pixels are there. Never waits.
+    pub(crate) fn answer_captures(&mut self) {
+        self.captures.retain(|capture| {
+            if !capture.mapping {
+                return true;
+            }
+            let pixels = match capture.state.load(std::sync::atomic::Ordering::Acquire) {
+                MAPPED => {
+                    let pixels = capture
+                        .buffer
+                        .get_mapped_range(..)
+                        .ok()
+                        .and_then(|view| crate::film_readback::decode(&view, capture.layout));
+                    capture.buffer.unmap();
+                    pixels
+                }
+                FAILED => None,
+                _ => return true,
+            };
+            let _ = capture.reply.send(pixels.map(|rgba| Captured {
+                size: [capture.layout.width, capture.layout.height],
+                rgba,
+            }));
+            false
+        });
+    }
 }
 
 type ImageMap = HashMap<(usize, bool), (Option<Weak<Image>>, wgpu::TextureView)>;
@@ -430,26 +594,26 @@ impl Target {
         model: Arc<Model>,
         size: [u32; 2],
     ) -> Self {
-        let target = |label, format| {
-            device
-                .create_texture(&wgpu::TextureDescriptor {
-                    label: Some(label),
-                    size: wgpu::Extent3d {
-                        width: size[0],
-                        height: size[1],
-                        depth_or_array_layers: 1,
-                    },
-                    mip_level_count: 1,
-                    sample_count: 1,
-                    dimension: wgpu::TextureDimension::D2,
-                    format,
-                    usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
-                    view_formats: &[],
-                })
-                .create_view(&Default::default())
+        let texture = |label, format| {
+            device.create_texture(&wgpu::TextureDescriptor {
+                label: Some(label),
+                size: wgpu::Extent3d {
+                    width: size[0],
+                    height: size[1],
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format,
+                // (copied out for a capture, `capture`)
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_SRC,
+                view_formats: &[],
+            })
         };
-        let color = target("Preview color", wgpu::TextureFormat::Rgba8Unorm);
-        let depth = target("Preview depth", wgpu::TextureFormat::Depth32Float);
+        let color_texture = texture("Preview color", wgpu::TextureFormat::Rgba8Unorm);
+        let color = color_texture.create_view(&Default::default());
+        let depth = texture("Preview depth", wgpu::TextureFormat::Depth32Float).create_view(&Default::default());
         let texture = egui.register_native_texture(device, &color, wgpu::FilterMode::Linear);
         let assets = &mut pipeline.assets;
         let mut parts = Vec::new();
@@ -605,6 +769,7 @@ impl Target {
             model,
             parts,
             size,
+            color_texture,
             color,
             depth,
             texture,
@@ -764,6 +929,7 @@ impl Cache {
         scale: f32,
     ) {
         self.meshes.render(device, encoder, egui, primitives, scale);
+        self.draw_captures(device, queue, encoder, egui);
         let mut seen = HashSet::new();
         let mut pano_seen = HashSet::new();
         for primitive in primitives {
