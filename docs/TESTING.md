@@ -6868,6 +6868,10 @@ before (`amis`, `groupes`, `repere`, `historique`…) are still accepted.
   someone else, with `cards`), `categories` (the categories of the first
   card), `register` ("Register as body, head or body part"), `store` (the
   store sheet of the first card), `stores` (the list of stores). Nothing is read or written on disk.
+  While `world::wardrobe::CARDS` is off (the coming releases), the viewer
+  reads no card: `cards` shows the products unsorted with no toast,
+  `creator` and `review` open nothing, and the other scenarios still start
+  from the demo's cards, applied by the demo itself.
 - **`AURORA_DEMO_RLVA`**: `enabled` opens Preferences > RLVa and
   applies synthetic object restrictions at frame 700. `disabled` delivers
   the same commands while the global opt-in stays off; `released` enables

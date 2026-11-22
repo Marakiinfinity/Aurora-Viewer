@@ -5,6 +5,13 @@
 //! never leaves the PC. Design and rules: docs/WARDROBE.md. Aurora's own
 //! feature; the Legacy Viewer has no equivalent.
 
+/// Wardrobe cards and the creator tool are switched off for the coming
+/// releases (the product decision of 2026-11-22): the viewer reads no card
+/// notecard, raises no card toast, and shows neither the creator tool nor
+/// the card rows of the menus. The parser, the writer, the matching and
+/// their tests stay, ready to be switched back on.
+pub const CARDS: bool = false;
+
 pub mod card;
 pub mod categories;
 pub mod demo;

@@ -926,7 +926,10 @@ fn tools_row(ui: &mut egui::Ui, p: &Palette, st: &mut InventoryUi, prefs: &mut I
         }
         // the creator tool: a button of its own where there is room, the
         // menu's first row everywhere
-        if width != Width::Thin && widgets::icon_button(ui, p, "file-text-filled", aurora_i18n::tr!("wardrobe-creator-open"), true) {
+        if wardrobe::CARDS
+            && width != Width::Thin
+            && widgets::icon_button(ui, p, "file-text-filled", aurora_i18n::tr!("wardrobe-creator-open"), true)
+        {
             st.wardrobe.creator.open = true;
         }
         let mut stacks = prefs.wardrobe.stacks;
@@ -936,7 +939,7 @@ fn tools_row(ui: &mut egui::Ui, p: &Palette, st: &mut InventoryUi, prefs: &mut I
         let mut unsorted = false;
         let mut stores = false;
         widgets::icon_menu(ui, p, "dots-filled", aurora_i18n::tr!("wardrobe-more"), |ui| {
-            if menu::item(ui, p, "file-text-filled", aurora_i18n::tr!("wardrobe-creator-open")) {
+            if wardrobe::CARDS && menu::item(ui, p, "file-text-filled", aurora_i18n::tr!("wardrobe-creator-open")) {
                 creator = true;
             }
             let count = st.wardrobe.model.unsorted.len();

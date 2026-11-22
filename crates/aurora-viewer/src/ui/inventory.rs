@@ -2847,7 +2847,9 @@ pub fn show(
         if let Some(creator) = st.wardrobe.profile.take() {
             actions.push(InvAction::Profile(creator));
         }
-        wardrobe::creator::show(ctx, p, inv, st, &facts, &mut actions);
+        if crate::world::wardrobe::CARDS {
+            wardrobe::creator::show(ctx, p, inv, st, &facts, &mut actions);
+        }
     }
     wardrobe::overlays(ctx, p, inv, st, &facts, images);
     st.hover.show(p, inv, prefs, hover_images, &mut st.wanted_hover_images);

@@ -191,6 +191,9 @@ pub(super) fn wardrobe(c: &mut Catalog, zone: &str, inv: &Inventory, id: Uuid, s
                 .filter_map(|item| inv.items.get(item))
                 .any(|it| wardrobe_asset(it.asset_type) && !inv.owner.is_nil() && it.creator == inv.owner)
         });
+    if !wardrobe::CARDS {
+        return;
+    }
     if own_product || all {
         c.add(
             "wardrobe-card-create",

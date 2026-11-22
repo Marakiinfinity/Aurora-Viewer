@@ -146,7 +146,7 @@ impl App {
         self.settings.inventory.wardrobe.open = true;
         self.settings.classic_inventory = false;
         self.panels.inventory = true;
-        if let Some(release) = seeded.release {
+        if let Some(release) = seeded.release.filter(|_| wardrobe::CARDS) {
             self.inventory_ui.wardrobe.creator.choose(&self.world.inventory, release, agent);
         }
     }
@@ -195,6 +195,9 @@ impl App {
                 shared.wardrobe.change(false, |txn| matching::rebind_by_asset(txn, &items));
             }
         });
+        if !wardrobe::CARDS {
+            return;
+        }
         // the cards already read whose items were not there yet
         let waiting: Vec<Uuid> = wardrobe::with(|shared| {
             shared
@@ -249,6 +252,9 @@ impl App {
     /// A notecard's contents arrived. Returns true when the read was the
     /// Wardrobe's own, which no other window waits for.
     pub(crate) fn wardrobe_preview(&mut self, item: Uuid, result: &Result<Vec<u8>, String>) -> bool {
+        if !wardrobe::CARDS {
+            return false;
+        }
         let own = self.wardrobe_cards.reading.is_some_and(|(id, _)| id == item);
         if own {
             // the next card is read at once

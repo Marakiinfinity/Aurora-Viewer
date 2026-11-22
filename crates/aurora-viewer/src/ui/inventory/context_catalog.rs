@@ -1592,10 +1592,12 @@ mod tests {
             "wardrobe-add",
             "wardrobe-show",
             "wardrobe-remove",
-            "wardrobe-card-review",
-            "wardrobe-card-create",
         ] {
             assert!(ids.contains(id), "missing editor option {id}");
+        }
+        // the card rows only while the Wardrobe cards are switched on
+        for id in ["wardrobe-card-review", "wardrobe-card-create"] {
+            assert_eq!(ids.contains(id), crate::world::wardrobe::CARDS, "editor option {id}");
         }
         let targets: Vec<_> = inv.items.keys().chain(inv.folders.keys()).copied().collect();
         for worn in [false, true] {
