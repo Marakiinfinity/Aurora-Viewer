@@ -18,6 +18,13 @@ updated with the code: where the first implementation differs from what was
 agreed, the text says what is built and section 15 lists what is left. The mockups it describes are in the team's design
 canvas ("Aurora Inventory Wardrobe mockups").
 
+**Switched off in the coming releases (decided 2026-11-22):** the Wardrobe
+cards (sections 5 to 7: no card notecard is read, no card toast is raised,
+no "Review Wardrobe card…" row) and the creator tool (section 12). Their
+code and tests stay; one constant, `world::wardrobe::CARDS`, switches them
+back on. Until then the Wardrobe is fed by the user alone: Auto-sort, the
+dialogs, stores, pictures and "Register as body, head or body part".
+
 ## 1. Principles
 
 - **Local.** Which items are in the Wardrobe, their categories, notes,
@@ -637,6 +644,9 @@ textures held with full permissions only, the one id a card carries.
 
 Left for later, each a ⬜ line of `TASKS.md`:
 
+- The Wardrobe cards and the creator tool, switched off by
+  `world::wardrobe::CARDS` (top of this page): switched back on once the
+  team decides to ship them.
 - The Wardrobe's fields in the saved smart searches
   (`ui/inventory/smart.rs`): category, subtype, kit, store, pack, event,
   has a HUD.

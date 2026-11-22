@@ -271,9 +271,13 @@ pub(super) fn sheet(ctx: &egui::Context, p: &Palette, st: &mut InventoryUi, fact
             );
         } else {
             ui.label(
-                egui::RichText::new(aurora_i18n::tr!("wardrobe-store-link-body"))
-                    .size(12.0)
-                    .color(p.muted),
+                egui::RichText::new(if crate::world::wardrobe::CARDS {
+                    aurora_i18n::tr!("wardrobe-store-link-body")
+                } else {
+                    aurora_i18n::tr!("wardrobe-store-link-body-local")
+                })
+                .size(12.0)
+                .color(p.muted),
             );
         }
         ui.add_space(6.0);

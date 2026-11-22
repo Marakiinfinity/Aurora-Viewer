@@ -687,9 +687,13 @@ fn empty(ui: &mut egui::Ui, p: &Palette, st: &mut InventoryUi) {
         if nothing {
             ui.add_space(4.0);
             ui.label(
-                egui::RichText::new(aurora_i18n::tr!("wardrobe-empty-body"))
-                    .size(12.0)
-                    .color(p.muted),
+                egui::RichText::new(if crate::world::wardrobe::CARDS {
+                    aurora_i18n::tr!("wardrobe-empty-body")
+                } else {
+                    aurora_i18n::tr!("wardrobe-empty-body-local")
+                })
+                .size(12.0)
+                .color(p.muted),
             );
             ui.add_space(10.0);
             let waiting = st.wardrobe.model.sortable;
