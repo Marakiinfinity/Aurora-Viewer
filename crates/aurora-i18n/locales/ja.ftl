@@ -16342,6 +16342,7 @@ wardrobe-empty-title = ワードローブは空です
 wardrobe-empty-filter = 該当するものはありません
 wardrobe-empty-body = クリエイターのワードローブカード、自動整理、またはメニューから手動で追加できます。
 wardrobe-empty-body-local = 自動整理、またはメニューから手動で追加できます。
+wardrobe-pref-look = 着用中のアイテムに自分の姿を表示
 wardrobe-group-events = イベント
 wardrobe-group-stores = ストアとクリエイター
 wardrobe-group-folders = フォルダとセット

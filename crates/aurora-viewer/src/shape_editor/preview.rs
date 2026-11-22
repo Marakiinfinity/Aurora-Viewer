@@ -378,6 +378,39 @@ impl Rigid {
 
 impl Snapshot {
     pub fn model(&self, avatars: &AvatarLibrary, values: &[u8], params: &BTreeMap<i32, f32>, group: usize, elevation: f32) -> Arc<Model> {
+        let (parts, world) = self.build(avatars, values, params);
+        let rig = &avatars.rig;
+        let joint = match group {
+            1..=6 => "mHead",
+            7 => "mTorso",
+            _ => "mPelvis",
+        };
+        let mut center = rig
+            .names
+            .get(joint)
+            .and_then(|j| world.get(*j))
+            .map(|m| m.w_axis.truncate())
+            .unwrap_or(Vec3::Z)
+            + Vec3::Z * elevation;
+        if group == 0 {
+            let head = rig.names.get("mHead").and_then(|j| world.get(*j)).map(|m| m.w_axis.z);
+            let foot = rig.names.get("mFootLeft").and_then(|j| world.get(*j)).map(|m| m.w_axis.z);
+            if let Some((head, foot)) = head.zip(foot) {
+                center.z = (head + foot + 0.1) * 0.5 + elevation;
+            }
+        }
+        Arc::new(Model {
+            parts,
+            center,
+            radius: 1.0,
+        })
+    }
+
+    /// The avatar as it looks: its body with its bakes and its worn meshes
+    /// in the frozen pose, and where each joint of the rig stands (feet at
+    /// the origin), for a caller that frames it itself (the Wardrobe's
+    /// pictures of worn items, `ui/inventory/wardrobe/look.rs`).
+    pub fn build(&self, avatars: &AvatarLibrary, values: &[u8], params: &BTreeMap<i32, f32>) -> (Vec<Part>, Vec<Mat4>) {
         let weights = avatars.shape_params.weights_with(values, params);
         let mut shape = avatars.shape_params.shape_weights(weights.clone(), &avatars.rig);
         let rig = &avatars.rig;
@@ -529,30 +562,7 @@ impl Snapshot {
                 });
             }
         }
-        let joint = match group {
-            1..=6 => "mHead",
-            7 => "mTorso",
-            _ => "mPelvis",
-        };
-        let mut center = rig
-            .names
-            .get(joint)
-            .and_then(|j| world.get(*j))
-            .map(|m| m.w_axis.truncate())
-            .unwrap_or(Vec3::Z)
-            + Vec3::Z * elevation;
-        if group == 0 {
-            let head = rig.names.get("mHead").and_then(|j| world.get(*j)).map(|m| m.w_axis.z);
-            let foot = rig.names.get("mFootLeft").and_then(|j| world.get(*j)).map(|m| m.w_axis.z);
-            if let Some((head, foot)) = head.zip(foot) {
-                center.z = (head + foot + 0.1) * 0.5 + elevation;
-            }
-        }
-        Arc::new(Model {
-            parts,
-            center,
-            radius: 1.0,
-        })
+        (parts, world)
     }
 }
 

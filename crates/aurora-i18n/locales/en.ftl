@@ -16503,6 +16503,7 @@ wardrobe-empty-title = Your Wardrobe is empty
 wardrobe-empty-filter = Nothing matches
 wardrobe-empty-body = Items join it from a creator's Wardrobe card, with Auto-sort, or by hand from the menu.
 wardrobe-empty-body-local = Items join it with Auto-sort, or by hand from the menu.
+wardrobe-pref-look = Show my look on worn items
 wardrobe-group-events = Events
 wardrobe-group-stores = Stores and creators
 wardrobe-group-folders = Folders and sets

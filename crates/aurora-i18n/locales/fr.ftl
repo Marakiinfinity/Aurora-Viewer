@@ -16509,6 +16509,7 @@ wardrobe-empty-title = Votre garde-robe est vide
 wardrobe-empty-filter = Aucun résultat
 wardrobe-empty-body = Les articles y entrent par la carte de garde-robe d'un créateur, par le tri automatique, ou à la main depuis le menu.
 wardrobe-empty-body-local = Les articles y entrent par le tri automatique, ou à la main depuis le menu.
+wardrobe-pref-look = Montrer mon apparence sur les articles portés
 wardrobe-group-events = Événements
 wardrobe-group-stores = Boutiques et créateurs
 wardrobe-group-folders = Dossiers et ensembles
