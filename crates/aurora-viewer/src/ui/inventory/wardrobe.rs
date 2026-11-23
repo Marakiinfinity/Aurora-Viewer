@@ -93,6 +93,9 @@ impl Default for Preferences {
 struct Note {
     text: String,
     undo: bool,
+    /// The change its Undo undoes: the newest one when the note first
+    /// shows, which is the change it tells of. A newer change hides it.
+    serial: Option<u64>,
     at: std::time::Instant,
 }
 
@@ -244,6 +247,7 @@ impl State {
         self.note = Some(Note {
             text,
             undo,
+            serial: None,
             at: std::time::Instant::now(),
         });
     }
@@ -424,7 +428,7 @@ pub(super) fn contents(
             .model
             .tiles
             .iter()
-            .filter(|tile| !matches!(tile.picture, Some(model::Picture::File(_))))
+            .filter(|tile| !tile.picture.as_ref().is_some_and(model::Picture::chosen))
             .flat_map(|tile| {
                 tile.copies
                     .iter()
@@ -1359,8 +1363,17 @@ fn note_line(ui: &mut egui::Ui, p: &Palette, st: &mut InventoryUi, inv: &Invento
         }
         return;
     }
-    let Some(note) = &st.wardrobe.note else { return };
-    let (text, undo) = (note.text.clone(), note.undo);
+    let Some(note) = &mut st.wardrobe.note else { return };
+    let top = if note.undo {
+        wardrobe::with(|shared| shared.wardrobe.undo_top())
+    } else {
+        None
+    };
+    if note.undo && note.serial.is_none() {
+        note.serial = top;
+    }
+    let undo = note.serial.filter(|serial| top == Some(*serial));
+    let text = note.text.clone();
     let mut close = false;
     let mut undone = false;
     ui.horizontal(|ui| {
@@ -1369,13 +1382,13 @@ fn note_line(ui: &mut egui::Ui, p: &Palette, st: &mut InventoryUi, inv: &Invento
         ui.add(egui::Label::new(egui::RichText::new(text).size(12.0).color(p.ink)).truncate());
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             close = widgets::icon_button(ui, p, "x", aurora_i18n::tr!("common-close"), true);
-            if undo && wardrobe::with(|shared| shared.wardrobe.can_undo()) {
+            if undo.is_some() {
                 undone = widgets::flat_button(ui, p, aurora_i18n::tr!("wardrobe-undo")).clicked();
             }
         });
     });
-    if undone {
-        wardrobe::with(|shared| shared.wardrobe.undo());
+    if let Some(serial) = undo.filter(|_| undone) {
+        wardrobe::with(|shared| shared.wardrobe.undo_change(serial));
     }
     if close || undone {
         st.wardrobe.note = None;
@@ -1597,9 +1610,28 @@ pub(super) fn tile_menu(
     if menu::item(ui, p, "pencil-filled", aurora_i18n::tr!("wardrobe-menu-note")) {
         st.wardrobe.dialog = Some(dialogs::Dialog::note(item, tile.note.as_deref().unwrap_or("")));
     }
-    let favorite = wardrobe::with(|shared| shared.wardrobe.account.bindings.get(&item).is_some_and(|b| b.favorite));
+    // a closed stack is one card: what its heart and Remove do, they do to
+    // every copy; an open stack's card is its copy alone
+    let copies: Vec<Uuid> = if st.wardrobe.open_stack == Some(tile.item) || !tile.copies.contains(&item) {
+        vec![item]
+    } else {
+        tile.copies.clone()
+    };
+    let favorite = wardrobe::with(|shared| {
+        copies
+            .iter()
+            .any(|copy| shared.wardrobe.account.bindings.get(copy).is_some_and(|b| b.favorite))
+    });
     if menu::check(ui, p, "heart-filled", aurora_i18n::tr!("wardrobe-menu-favorite"), favorite, true) {
-        wardrobe::with(|shared| shared.wardrobe.change(false, |txn| txn.binding(item).favorite = !favorite));
+        wardrobe::with(|shared| {
+            shared.wardrobe.change(false, |txn| {
+                for copy in &copies {
+                    if txn.account().bindings.contains_key(copy) {
+                        txn.binding(*copy).favorite = !favorite;
+                    }
+                }
+            })
+        });
     }
     // a kit others are created for: a body, a head, ears… said in one
     // place, with the preset the item's name tells
@@ -1638,7 +1670,13 @@ pub(super) fn tile_menu(
         st.wardrobe.leave = true;
     }
     if menu::item(ui, p, "trash-filled", aurora_i18n::tr!("wardrobe-menu-remove")) {
-        wardrobe::with(|shared| shared.wardrobe.change(true, |txn| txn.remove_binding(item)));
+        wardrobe::with(|shared| {
+            shared.wardrobe.change(true, |txn| {
+                for copy in &copies {
+                    txn.remove_binding(*copy);
+                }
+            })
+        });
         st.wardrobe
             .say(aurora_i18n::tr!("wardrobe-removed", name = tile.name.as_str()), true);
     }

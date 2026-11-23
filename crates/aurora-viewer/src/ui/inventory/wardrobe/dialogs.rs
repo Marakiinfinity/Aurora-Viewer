@@ -161,6 +161,18 @@ fn names(list: &str) -> Vec<String> {
 
 /// A list of items to pick one from, filtered by `search`. Returns the one
 /// clicked.
+/// Whether a name holds a lower-case needle, without a copy of the name
+/// for a needle of plain letters.
+fn holds(name: &str, needle: &str) -> bool {
+    if needle.is_ascii() {
+        name.as_bytes()
+            .windows(needle.len())
+            .any(|w| w.eq_ignore_ascii_case(needle.as_bytes()))
+    } else {
+        name.to_lowercase().contains(needle)
+    }
+}
+
 fn pick_list(ui: &mut egui::Ui, p: &Palette, search: &mut String, rows: &[(Uuid, String, String)]) -> Option<Uuid> {
     // in a row of its own: the field centres its text in the height it is
     // given, and a column gives it all of it
@@ -616,12 +628,16 @@ pub(super) fn show(
                         .color(p.muted),
                 );
                 let folder = inv.items.get(&item).map(|it| it.parent);
+                // only the names the search holds are taken from the whole
+                // inventory, every frame: never all of its objects
+                let needle = search.trim().to_lowercase();
                 let mut rows: Vec<(Uuid, String, String)> = inv
                     .items
                     .values()
                     .filter(|it| it.asset_type == 6 && it.id != item && !current.contains(&it.id))
                     .filter(|it| {
-                        Some(it.parent) == folder || (!search.is_empty() && inv.folders.get(&it.parent).is_some_and(|f| !f.library))
+                        Some(it.parent) == folder
+                            || (!needle.is_empty() && holds(&it.name, &needle) && inv.folders.get(&it.parent).is_some_and(|f| !f.library))
                     })
                     .map(|it| {
                         (
@@ -751,16 +767,17 @@ pub(super) fn show(
 
 /// The picture the user gives an item: a texture item of the inventory, a
 /// file of the PC, or neither (the item's own image). A file that no item
-/// shows any more is deleted.
+/// shows any more, nor a change that can be undone, is deleted.
 pub(super) fn set_picture(item: Uuid, texture: Option<Uuid>, file: Option<String>) {
     let old = wardrobe::with(|shared| {
-        shared.wardrobe.change(false, |txn| {
+        let old = shared.wardrobe.change(false, |txn| {
             let binding = txn.binding(item);
             let old = std::mem::replace(&mut binding.picture_file, file.clone());
             binding.picture = texture;
             binding.picture_by_user = texture.is_some() || file.is_some();
-            old.filter(|name| !txn.account().bindings.values().any(|b| b.picture_file.as_ref() == Some(name)))
-        })
+            old
+        });
+        old.filter(|name| !shared.wardrobe.picture_in_use(name))
     });
     if let Some(name) = old {
         pictures::discard(pictures::Kind::Item, &name);

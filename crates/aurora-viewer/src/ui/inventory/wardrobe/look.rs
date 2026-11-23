@@ -36,6 +36,14 @@ pub struct Live {
     pub looks: Option<Arc<Looks>>,
     key: u64,
     since: Option<Instant>,
+    /// When the app last found the look built still matching the avatar.
+    confirmed: Option<Instant>,
+    /// What was worn at the last call of `keep`, and when that was: a
+    /// change of what is worn, or the Wardrobe opened again, waits for the
+    /// look to settle anew.
+    worn_hash: u64,
+    last_keep: Option<Instant>,
+    fresh_from: Option<Instant>,
     /// The setting (`Preferences::look`), copied each frame.
     pub enabled: bool,
     /// A worn card asked for a picture this frame: the app keeps the look
@@ -70,7 +78,13 @@ impl Live {
     pub fn arrived(&mut self, looks: Looks, key: u64) -> Option<Arc<Looks>> {
         self.key = key;
         self.since = Some(Instant::now());
+        self.confirmed = self.since;
         self.looks.replace(Arc::new(looks))
+    }
+
+    /// The app checked the avatar: the look built is still its look.
+    pub fn confirm(&mut self) {
+        self.confirmed = Some(Instant::now());
     }
 
     /// Once a frame while the Wardrobe shows: keeps the look of the worn
@@ -81,6 +95,18 @@ impl Live {
         if self.enabled && !worn.is_empty() {
             self.wanted.set(true);
         }
+        let now = Instant::now();
+        let worn_hash = {
+            let mut hasher = std::collections::hash_map::DefaultHasher::new();
+            std::hash::Hash::hash(&worn.iter().map(|(item, _)| item).collect::<Vec<_>>(), &mut hasher);
+            std::hash::Hasher::finish(&hasher)
+        };
+        let reopened = self.last_keep.is_none_or(|at| now.duration_since(at) > Duration::from_secs(2));
+        if reopened || worn_hash != self.worn_hash {
+            self.fresh_from = Some(now);
+        }
+        self.worn_hash = worn_hash;
+        self.last_keep = Some(now);
         match self.keeping.take() {
             Some(Keeping::Drawing { item, key, answer }) => match answer.try_recv() {
                 Ok(Some(captured)) => match image::RgbaImage::from_raw(captured.size[0], captured.size[1], captured.rgba) {
@@ -88,7 +114,7 @@ impl Live {
                         self.keeping = Some(Keeping::Saving {
                             item,
                             key,
-                            job: pictures::save(ctx, pictures::Kind::Item, image),
+                            job: pictures::save_kept(ctx, image),
                         });
                     }
                     None => {
@@ -130,9 +156,15 @@ impl Live {
         let (Some(looks), Some(since)) = (&self.looks, self.since) else {
             return;
         };
-        let wait = SETTLE.saturating_sub(since.elapsed());
-        if !wait.is_zero() {
-            ctx.request_repaint_after(wait);
+        // the look has stayed the same since it arrived, since what is worn
+        // last changed and since the Wardrobe opened, and the app found it
+        // current after that: a hair just put on has rezzed by then
+        let settled_from = self.fresh_from.map_or(since, |fresh| fresh.max(since));
+        let wait = SETTLE.saturating_sub(now.saturating_duration_since(settled_from));
+        if !wait.is_zero() || self.confirmed.is_none_or(|at| at < settled_from + SETTLE) {
+            // frames keep coming while it waits: a gap of frames reads as
+            // the Wardrobe opened again
+            ctx.request_repaint_after(Duration::from_millis(250));
             return;
         }
         let key = self.key;
@@ -170,22 +202,22 @@ fn view(shot: Shot, p: &crate::theme::Palette) -> View {
 }
 
 /// The item's kept look is the new file; the one it replaces is deleted
-/// when no item shows it any more.
+/// when no item shows it any more and no undo can bring it back. An item
+/// taken out of the Wardrobe while its look was being kept stays out.
 fn set_kept(item: Uuid, name: String) {
-    let old = wardrobe::with(|shared| {
-        shared.wardrobe.change(false, |txn| {
-            let binding = txn.binding(item);
-            let old = binding.auto_picture.replace(name);
-            old.filter(|old| {
-                !txn.account()
-                    .bindings
-                    .values()
-                    .any(|b| b.auto_picture.as_ref() == Some(old) || b.picture_file.as_ref() == Some(old))
-            })
-        })
+    let discard = wardrobe::with(|shared| {
+        let Some(entry) = shared.wardrobe.entry(item) else {
+            return (!shared.wardrobe.picture_in_use(&name)).then_some(name);
+        };
+        // the same look as last time: nothing to save
+        if entry.binding.auto_picture.as_deref() == Some(name.as_str()) {
+            return None;
+        }
+        let old = shared.wardrobe.change(false, |txn| txn.binding(item).auto_picture.replace(name));
+        old.filter(|old| !shared.wardrobe.picture_in_use(old))
     });
-    if let Some(old) = old {
-        pictures::discard(pictures::Kind::Item, &old);
+    if let Some(name) = discard {
+        pictures::discard(pictures::Kind::Item, &name);
     }
 }
 
@@ -202,8 +234,11 @@ pub fn paint(ui: &egui::Ui, p: &crate::theme::Palette, rect: egui::Rect, tag: Op
     let Some(model) = live.looks.as_ref().and_then(|looks| looks.get(&shot)).cloned() else {
         return false;
     };
-    // one drawing per framing and size: the cards of a grid share it
-    let size = (rect.width().round() as i32, rect.height().round() as i32);
+    // one drawing per framing and size in pixels, as the target is sized:
+    // the cards of a grid share it, and a card between two sizes (a
+    // selection settling) never resizes the others' target
+    let ppp = ui.ctx().pixels_per_point();
+    let size = ((rect.width() * ppp).ceil() as i32, (rect.height() * ppp).ceil() as i32);
     let id = egui::Id::unique(("wardrobe-look", shot, size));
     aurora_render::preview::paint_in(ui.painter(), rect, id, model, view(shot, p));
     true

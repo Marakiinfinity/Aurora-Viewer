@@ -24,7 +24,7 @@ pub mod sort;
 pub mod store;
 
 use categories::{Part, Tag};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use store::{Account, Binding, CardState, Catalogue, KnownKit, Pack, Product, Removed, Storage, Store};
 use uuid::Uuid;
@@ -47,6 +47,8 @@ struct Undo {
     products: Vec<(String, Option<Product>)>,
     bindings: Vec<(Uuid, Option<Binding>)>,
     cards: Vec<(Uuid, Option<CardState>)>,
+    /// Creator → store links a store removal took away.
+    links: Vec<(Uuid, Option<Uuid>)>,
     kits_known: Option<Vec<KnownKit>>,
 }
 
@@ -57,6 +59,7 @@ impl Undo {
             && self.products.is_empty()
             && self.bindings.is_empty()
             && self.cards.is_empty()
+            && self.links.is_empty()
             && self.kits_known.is_none()
     }
 }
@@ -72,8 +75,14 @@ pub struct Wardrobe {
     account_read: bool,
     /// Bumped by every change: the cached views rebuild.
     pub revision: u64,
-    /// Since the login only: an undo never outlives the session.
-    undo: Vec<Undo>,
+    /// Bumped by the changes of the catalogue only (`index_key`).
+    catalogue_revision: u64,
+    /// Since the login only: an undo never outlives the session. Each with
+    /// its serial, so that a note's Undo undoes its own change only.
+    undo: Vec<(u64, Undo)>,
+    undo_serial: u64,
+    /// A change came before the account file was read: saved once it is.
+    account_owed: bool,
 }
 
 /// One change of the Wardrobe: what it touches is remembered so that the
@@ -83,9 +92,16 @@ pub struct Txn<'a> {
     account: &'a mut Account,
     removed: &'a mut Removed,
     undo: Undo,
+    /// The keys `undo` already holds: a change of thousands of items
+    /// (Auto-sort) checks them in constant time.
+    seen: HashSet<(u8, Uuid)>,
     catalogue_changed: bool,
     account_changed: bool,
 }
+
+const SEEN_STORE: u8 = 0;
+const SEEN_BINDING: u8 = 1;
+const SEEN_CARD: u8 = 2;
 
 impl Txn<'_> {
     pub fn catalogue(&self) -> &Catalogue {
@@ -103,7 +119,7 @@ impl Txn<'_> {
         }
         let before = self.catalogue.stores.insert(store.key, store.clone());
         self.removed.stores.remove(&store.key);
-        if !self.undo.stores.iter().any(|(k, _)| *k == store.key) {
+        if self.seen.insert((SEEN_STORE, store.key)) {
             self.undo.stores.push((store.key, before));
         }
         self.catalogue_changed = true;
@@ -123,6 +139,7 @@ impl Txn<'_> {
             for creator in linked {
                 self.catalogue.creator_stores.remove(&creator);
                 self.removed.links.insert(creator);
+                self.undo.links.push((creator, Some(key)));
             }
             let items: Vec<Uuid> = self
                 .account
@@ -134,7 +151,7 @@ impl Txn<'_> {
             for item in items {
                 self.binding(item).store = None;
             }
-            if !self.undo.stores.iter().any(|(k, _)| *k == key) {
+            if self.seen.insert((SEEN_STORE, key)) {
                 self.undo.stores.push((key, Some(before)));
             }
             self.catalogue_changed = true;
@@ -210,7 +227,7 @@ impl Txn<'_> {
     /// The binding of an item, created when the item was not in the
     /// Wardrobe.
     pub fn binding(&mut self, item: Uuid) -> &mut Binding {
-        if !self.undo.bindings.iter().any(|(k, _)| *k == item) {
+        if self.seen.insert((SEEN_BINDING, item)) {
             self.undo.bindings.push((item, self.account.bindings.get(&item).cloned()));
         }
         self.account_changed = true;
@@ -221,7 +238,7 @@ impl Txn<'_> {
     /// never the item.
     pub fn remove_binding(&mut self, item: Uuid) {
         if let Some(before) = self.account.bindings.remove(&item) {
-            if !self.undo.bindings.iter().any(|(k, _)| *k == item) {
+            if self.seen.insert((SEEN_BINDING, item)) {
                 self.undo.bindings.push((item, Some(before)));
             }
             self.account_changed = true;
@@ -230,7 +247,7 @@ impl Txn<'_> {
 
     pub fn set_card(&mut self, card: Uuid, state: CardState) {
         let before = self.account.cards.insert(card, state);
-        if !self.undo.cards.iter().any(|(k, _)| *k == card) {
+        if self.seen.insert((SEEN_CARD, card)) {
             self.undo.cards.push((card, before));
         }
         self.account_changed = true;
@@ -374,6 +391,7 @@ impl Wardrobe {
             self.catalogue.merge_missing(read, &self.removed);
             self.catalogue_read = true;
             self.revision += 1;
+            self.catalogue_revision += 1;
         }
         if !self.account_read
             && let Some(read) = storage.take_account()
@@ -387,6 +405,9 @@ impl Wardrobe {
             self.account.my_kits.extend(early.my_kits);
             self.account_read = true;
             self.revision += 1;
+            if std::mem::take(&mut self.account_owed) {
+                storage.save_account(&self.account);
+            }
         }
     }
 
@@ -405,13 +426,15 @@ impl Wardrobe {
             account: &mut self.account,
             removed: &mut self.removed,
             undo: Undo::default(),
+            seen: HashSet::new(),
             catalogue_changed: false,
             account_changed: false,
         };
         let result = f(&mut txn);
         let (undo, catalogue_changed, account_changed) = (txn.undo, txn.catalogue_changed, txn.account_changed);
         if undoable && !undo.is_empty() {
-            self.undo.push(undo);
+            self.undo_serial += 1;
+            self.undo.push((self.undo_serial, undo));
             if self.undo.len() > UNDO_DEPTH {
                 self.undo.remove(0);
             }
@@ -425,25 +448,55 @@ impl Wardrobe {
             return;
         }
         self.revision += 1;
+        if catalogue {
+            self.catalogue_revision += 1;
+        }
         if let Some(storage) = &self.storage {
             if catalogue {
                 storage.save_catalogue(&self.catalogue, &self.removed);
             }
-            if account {
+            // the account file is written whole: not before it is read,
+            // or the early change would replace everything in it
+            if account && self.account_read {
                 storage.save_account(&self.account);
+            } else if account {
+                self.account_owed = true;
             }
         }
     }
 
-    pub fn can_undo(&self) -> bool {
-        !self.undo.is_empty()
+    /// The serial of the newest undoable change.
+    pub fn undo_top(&self) -> Option<u64> {
+        self.undo.last().map(|(serial, _)| *serial)
+    }
+
+    /// Undoes the change `serial` when it is still the newest: a change
+    /// made since is never undone in its place.
+    pub fn undo_change(&mut self, serial: u64) -> bool {
+        self.undo_top() == Some(serial) && self.undo()
+    }
+
+    /// Whether a picture file is still named by an item, or by a change
+    /// that can still be undone: such a file is not deleted.
+    pub fn picture_in_use(&self, name: &str) -> bool {
+        let names = |b: &Binding| b.picture_file.as_deref() == Some(name) || b.auto_picture.as_deref() == Some(name);
+        self.account.bindings.values().any(names)
+            || self
+                .undo
+                .iter()
+                .flat_map(|(_, undo)| undo.bindings.iter())
+                .any(|(_, before)| before.as_ref().is_some_and(names))
     }
 
     /// Puts back what the last undoable change replaced. What the user
     /// changed since on other records stays.
     pub fn undo(&mut self) -> bool {
-        let Some(undo) = self.undo.pop() else { return false };
-        let catalogue = !undo.stores.is_empty() || !undo.packs.is_empty() || !undo.products.is_empty() || undo.kits_known.is_some();
+        let Some((_, undo)) = self.undo.pop() else { return false };
+        let catalogue = !undo.stores.is_empty()
+            || !undo.packs.is_empty()
+            || !undo.products.is_empty()
+            || !undo.links.is_empty()
+            || undo.kits_known.is_some();
         let account = !undo.bindings.is_empty() || !undo.cards.is_empty();
         for (key, before) in undo.stores {
             match before {
@@ -484,6 +537,18 @@ impl Wardrobe {
         if let Some(kits) = undo.kits_known {
             self.catalogue.kits_known = kits;
         }
+        for (creator, before) in undo.links {
+            match before {
+                Some(store) => {
+                    self.removed.links.remove(&creator);
+                    self.catalogue.creator_stores.insert(creator, store);
+                }
+                None => {
+                    self.catalogue.creator_stores.remove(&creator);
+                    self.removed.links.insert(creator);
+                }
+            }
+        }
         for (key, before) in undo.bindings {
             match before {
                 Some(binding) => self.account.bindings.insert(key, binding),
@@ -498,6 +563,38 @@ impl Wardrobe {
         }
         self.saved(catalogue, account);
         true
+    }
+
+    /// What the inventory index (`scan::Index`) reads of the Wardrobe: the
+    /// items, their products, kits, parts and fits, the HUD links and the
+    /// catalogue. A favourite, a card seen, a note or the sort order leave
+    /// it as it is, and the index is not rebuilt for them. Costs one pass
+    /// over the Wardrobe's items, run when `revision` changed.
+    pub fn index_key(&self) -> u64 {
+        use std::hash::{Hash, Hasher};
+        let one = |value: &dyn Fn(&mut std::collections::hash_map::DefaultHasher)| {
+            let mut hasher = std::collections::hash_map::DefaultHasher::new();
+            value(&mut hasher);
+            hasher.finish()
+        };
+        // summed: the maps' order does not count
+        let mut sum = 0u64;
+        for (item, b) in &self.account.bindings {
+            sum = sum.wrapping_add(one(&|h| (item, &b.product, &b.fits, &b.kit, &b.part).hash(h)));
+        }
+        for (tag, links) in [(1u8, &self.account.hud_links), (2u8, &self.account.hud_excluded)] {
+            for (item, huds) in links {
+                sum = sum.wrapping_add(one(&|h| (tag, item, huds).hash(h)));
+            }
+        }
+        one(&|h| {
+            sum.hash(h);
+            self.catalogue_revision.hash(h);
+            self.account.worn_huds.hash(h);
+            for kit in &self.account.my_kits {
+                (&kit.name, kit.part, kit.creator, &kit.patterns, &kit.sizes).hash(h);
+            }
+        })
     }
 
     pub fn contains(&self, item: &Uuid) -> bool {
@@ -608,12 +705,16 @@ pub fn open(files: Option<(PathBuf, PathBuf)>) {
         .as_ref()
         .and_then(|(catalogue, _)| catalogue.parent())
         .map(|folder| folder.join(LOGOS_FOLDER));
+    // the previous account's storage writes what it still owes, outside the
+    // lock, before the new one reads: a login again to the same account
+    // reads its last change
+    let previous = SHARED.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).take();
+    drop(previous);
     let wardrobe = match files {
         Some((catalogue, account)) => Wardrobe::load(catalogue, account),
         None => Wardrobe::in_memory(),
     };
     let mut guard = SHARED.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-    // the previous account's storage writes what it still owes, then goes
     *guard = Some(Shared {
         wardrobe,
         pictures,

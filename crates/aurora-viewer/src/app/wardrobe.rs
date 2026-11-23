@@ -357,6 +357,7 @@ impl App {
             .as_ref()
             .is_some_and(|(key, built)| *key == input.key && *built == values)
         {
+            self.inventory_ui.wardrobe.live.confirm();
             return;
         }
         look.pending = true;

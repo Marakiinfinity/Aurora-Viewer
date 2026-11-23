@@ -33,9 +33,17 @@ fn folder(kind: Kind) -> Option<PathBuf> {
 
 enum Slot {
     Loading(crossbeam_channel::Receiver<Option<egui::ColorImage>>),
-    Ready(egui::TextureHandle),
+    /// With when a card last drew it.
+    Ready(egui::TextureHandle, std::time::Instant),
     Failed,
 }
+
+/// A picture no card drew for this long is let go (a scroll through a
+/// large Wardrobe, the pictures of the account before a logout); it is
+/// read again if a card shows it again.
+const UNUSED_FOR: std::time::Duration = std::time::Duration::from_secs(30);
+/// Pictures read at once: a fast scroll does not start a thread per card.
+const READS_AT_ONCE: usize = 6;
 
 static TEXTURES: Mutex<Option<HashMap<String, Slot>>> = Mutex::new(None);
 /// The demo's pictures, by name.
@@ -64,13 +72,20 @@ pub(super) fn texture(ctx: &egui::Context, kind: Kind, name: &str) -> Option<egu
     }
     let mut guard = lock(&TEXTURES);
     let slots = guard.get_or_insert_with(HashMap::new);
-    match slots.get(name) {
-        Some(Slot::Ready(texture)) => return Some(texture.clone()),
+    let now = std::time::Instant::now();
+    match slots.get_mut(name) {
+        Some(Slot::Ready(texture, used)) => {
+            *used = now;
+            return Some(texture.clone());
+        }
         Some(Slot::Failed) => return None,
         Some(Slot::Loading(done)) => {
             let Ok(read) = done.try_recv() else { return None };
             let slot = match read {
-                Some(image) => Slot::Ready(ctx.load_texture(format!("wardrobe-picture-{name}"), image, egui::TextureOptions::LINEAR)),
+                Some(image) => Slot::Ready(
+                    ctx.load_texture(format!("wardrobe-picture-{name}"), image, egui::TextureOptions::LINEAR),
+                    now,
+                ),
                 None => Slot::Failed,
             };
             slots.insert(name.to_owned(), slot);
@@ -78,6 +93,13 @@ pub(super) fn texture(ctx: &egui::Context, kind: Kind, name: &str) -> Option<egu
             return None;
         }
         None => {}
+    }
+    // the pictures nobody looked at lately go; past a few reads at once,
+    // the next ones wait for a later frame
+    slots.retain(|_, slot| !matches!(slot, Slot::Ready(_, used) if now.duration_since(*used) > UNUSED_FOR));
+    if slots.values().filter(|slot| matches!(slot, Slot::Loading(_))).count() >= READS_AT_ONCE {
+        ctx.request_repaint_after(std::time::Duration::from_millis(50));
+        return None;
     }
     let (tx, done) = crossbeam_channel::bounded(1);
     if let Some(image) = lock(&MEMORY).as_ref().and_then(|m| m.get(name).cloned()) {
@@ -199,13 +221,37 @@ pub(super) fn choose(ctx: &egui::Context, from: From) -> Job {
 /// Saves a framed picture as a PNG of its folder, off the frame thread;
 /// the demo keeps it in memory.
 pub(super) fn save(ctx: &egui::Context, kind: Kind, image: image::RgbaImage) -> SaveJob {
+    store(ctx, kind, image, |_| format!("{}.png", uuid::Uuid::new_v4()))
+}
+
+/// Saves a kept look under a name drawn from its pixels: the same look
+/// kept again (each login, or by two items of one framing) is the same
+/// file, written once.
+pub(super) fn save_kept(ctx: &egui::Context, image: image::RgbaImage) -> SaveJob {
+    store(ctx, Kind::Item, image, content_name)
+}
+
+fn content_name(image: &image::RgbaImage) -> String {
+    use sha2::Digest;
+    let digest = sha2::Sha256::new()
+        .chain_update(image.width().to_le_bytes())
+        .chain_update(image.height().to_le_bytes())
+        .chain_update(image.as_raw())
+        .finalize();
+    let mut bytes = [0u8; 16];
+    bytes.copy_from_slice(&digest[..16]);
+    format!("{}.png", uuid::Uuid::from_bytes(bytes))
+}
+
+fn store(ctx: &egui::Context, kind: Kind, image: image::RgbaImage, name_of: fn(&image::RgbaImage) -> String) -> SaveJob {
     let (tx, job) = crossbeam_channel::bounded(1);
     let folder = folder(kind);
     let ctx = ctx.clone();
     let failed = tx.clone();
     let spawned = std::thread::Builder::new().name("aurora-wardrobe-picture".into()).spawn(move || {
-        let name = format!("{}.png", uuid::Uuid::new_v4());
+        let name = name_of(&image);
         let saved = match &folder {
+            Some(folder) if folder.join(&name).is_file() => Ok(()),
             Some(folder) => {
                 let mut bytes = Vec::new();
                 image::DynamicImage::ImageRgba8(image)
@@ -263,6 +309,11 @@ mod tests {
     #[test]
     fn only_the_names_this_module_gives_are_read() {
         assert!(valid(&format!("{}.png", uuid::Uuid::new_v4())));
+        // a kept look's name is valid, and the same for the same pixels
+        let look = image::RgbaImage::from_pixel(8, 8, image::Rgba([1, 2, 3, 255]));
+        assert!(valid(&content_name(&look)));
+        assert_eq!(content_name(&look), content_name(&look.clone()));
+        assert_ne!(content_name(&look), content_name(&image::RgbaImage::new(8, 8)));
         for name in [
             "../../secret.png",
             "a.png",

@@ -408,21 +408,53 @@ impl Account {
     }
 }
 
-fn read<T>(path: &std::path::Path, what: &str, parse: impl FnOnce(&[u8]) -> Result<T, String>) -> Option<T> {
+/// Reads one of the files. `first`: the read at the login, which keeps an
+/// unreadable file aside (`<name>.unreadable.json`) before the Wardrobe
+/// starts again from an empty one, so that a file of a newer version, or a
+/// damaged one, is never lost to the next save.
+fn read<T>(path: &std::path::Path, what: &str, first: bool, parse: impl Fn(&[u8]) -> Result<T, String>) -> Option<T> {
     match std::fs::metadata(path) {
         Ok(meta) if meta.len() > MAX_BYTES => {
             log::warn!("Cannot read the Wardrobe {what}: the file is too large");
+            if first {
+                keep_aside(path, what);
+            }
             return None;
         }
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return None,
         _ => {}
     }
-    let bytes = std::fs::read(path)
-        .map_err(|error| log::warn!("Cannot read the Wardrobe {what}: {error}"))
-        .ok()?;
-    parse(&bytes)
-        .map_err(|error| log::warn!("Cannot read the Wardrobe {what}: {error}"))
-        .ok()
+    // a file another program holds for a moment (an antivirus) is read
+    // again rather than taken for an empty one
+    let mut bytes = std::fs::read(path);
+    for _ in 0..4 {
+        match &bytes {
+            Err(error) if error.kind() != std::io::ErrorKind::NotFound => {
+                std::thread::sleep(std::time::Duration::from_millis(250));
+                bytes = std::fs::read(path);
+            }
+            _ => break,
+        }
+    }
+    let bytes = bytes.map_err(|error| log::warn!("Cannot read the Wardrobe {what}: {error}")).ok()?;
+    match parse(&bytes) {
+        Ok(read) => Some(read),
+        Err(error) => {
+            log::warn!("Cannot read the Wardrobe {what}: {error}");
+            if first {
+                keep_aside(path, what);
+            }
+            None
+        }
+    }
+}
+
+fn keep_aside(path: &std::path::Path, what: &str) {
+    let aside = path.with_extension("unreadable.json");
+    match std::fs::copy(path, &aside) {
+        Ok(_) => log::warn!("The unreadable Wardrobe {what} is kept as {}", aside.display()),
+        Err(error) => log::warn!("Cannot keep the unreadable Wardrobe {what} aside: {error}"),
+    }
 }
 
 fn write(path: &std::path::Path, bytes: Result<Vec<u8>, String>) -> std::io::Result<()> {
@@ -459,19 +491,19 @@ impl Storage {
         let (catalogue, catalogue_writes) = mpsc::unbounded::<(Catalogue, Removed)>();
         let (account, account_writes) = mpsc::unbounded::<Account>();
         let first = std::thread::Builder::new().name("aurora-wardrobe-catalogue".into()).spawn(move || {
-            let _ = catalogue_tx.send(read(&catalogue_path, "catalogue", Catalogue::parse).unwrap_or_default());
+            let _ = catalogue_tx.send(read(&catalogue_path, "catalogue", true, Catalogue::parse).unwrap_or_default());
             crate::save_retry::write_latest("Wardrobe catalogue", &catalogue_writes, |(catalogue, removed)| {
                 // another account of the PC may have written since: keep
                 // what it added
                 let mut merged = catalogue.clone();
-                if let Some(on_disk) = read(&catalogue_path, "catalogue", Catalogue::parse) {
+                if let Some(on_disk) = read(&catalogue_path, "catalogue", false, Catalogue::parse) {
                     merged.merge_missing(on_disk, removed);
                 }
                 write(&catalogue_path, merged.bytes())
             });
         });
         let second = std::thread::Builder::new().name("aurora-wardrobe-account".into()).spawn(move || {
-            let _ = account_tx.send(read(&account_path, "account file", Account::parse).unwrap_or_default());
+            let _ = account_tx.send(read(&account_path, "account file", true, Account::parse).unwrap_or_default());
             crate::save_retry::write_latest("Wardrobe account file", &account_writes, |account| {
                 write(&account_path, account.bytes())
             });

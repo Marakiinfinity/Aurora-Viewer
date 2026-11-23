@@ -8409,6 +8409,9 @@ impl Backend {
         // (nothing was drawn for the pixel this frame began to answer)
         self.drawn_pick.abandon();
         self.part_pick.abandon();
+        // a picture drawn into an encoder that is never submitted has
+        // nothing to read: answered empty, never mapped as a black one
+        self.previews.abandon_captures();
         self.result(index, stats, None, spent)
     }
 

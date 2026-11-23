@@ -41,7 +41,7 @@ pub(in super::super) fn paint_picture(
     ui.painter().rect_filled(rect, radius, p.raised);
     // a worn item: the avatar as it looks now, unless the user chose a
     // picture of their own
-    let chosen = matches!(tile.picture, Some(model::Picture::File(_)));
+    let chosen = tile.picture.as_ref().is_some_and(model::Picture::chosen);
     if !chosen && live.is_some_and(|live| look::paint(ui, p, rect, tile.main(), live)) {
         if alpha < 1.0 {
             ui.painter().rect_filled(rect, radius, p.panel.gamma_multiply(1.0 - alpha));
@@ -50,7 +50,7 @@ pub(in super::super) fn paint_picture(
     }
     let local;
     let texture = match &tile.picture {
-        Some(model::Picture::Asset(asset)) => images.get(asset).or_else(|| {
+        Some(model::Picture::Asset(asset) | model::Picture::Texture(asset)) => images.get(asset).or_else(|| {
             wanted.insert(*asset);
             None
         }),

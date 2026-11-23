@@ -84,7 +84,12 @@ pub fn names_demo(name: &str) -> bool {
 
 /// Whether a name says the item is a HUD: "HUD" as a word of its own.
 pub fn names_hud(name: &str) -> bool {
-    words(name).iter().any(|w| w == "hud" || w == "huds")
+    // most names never say it: told without allocating
+    mentions_hud(name) && words(name).iter().any(|w| w == "hud" || w == "huds")
+}
+
+fn mentions_hud(name: &str) -> bool {
+    name.as_bytes().windows(3).any(|w| w.eq_ignore_ascii_case(b"hud"))
 }
 
 /// The folded name of what a HUD belongs to, from its own name: "Sora head
@@ -94,8 +99,12 @@ pub fn hud_stem(name: &str) -> Option<String> {
     if !names_hud(name) {
         return None;
     }
-    let kept: Vec<String> = words(name).into_iter().filter(|w| w != "hud" && w != "huds").collect();
-    let folded = fold(&kept.join(" "));
+    // folded as `fold` folds the item's own name: "[Brand] Sora head HUD"
+    // goes with "[Brand] Sora head"
+    let strip = |words: Vec<String>| fold_words(words.into_iter().filter(|w| w != "hud" && w != "huds").collect());
+    let plain = strip(words(&without_brackets(name)));
+    let kept = if plain.is_empty() { strip(words(name)) } else { plain };
+    let folded = kept.join(" ");
     (!folded.is_empty()).then_some(folded)
 }
 

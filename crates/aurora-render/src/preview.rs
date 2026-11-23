@@ -474,6 +474,18 @@ impl Cache {
         }
     }
 
+    /// The frame's encoder was dropped: the captures drawn in it are
+    /// answered empty. Those of earlier, submitted frames go on.
+    pub(crate) fn abandon_captures(&mut self) {
+        self.captures.retain(|capture| {
+            if capture.mapping {
+                return true;
+            }
+            let _ = capture.reply.send(None);
+            false
+        });
+    }
+
     /// Some capture is on its way: the device is to be polled.
     pub(crate) fn capturing(&self) -> bool {
         self.captures.iter().any(|c| c.mapping)

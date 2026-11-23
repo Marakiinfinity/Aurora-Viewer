@@ -76,14 +76,24 @@ pub fn preset_of(item: &InvItem) -> Option<(&'static str, Part)> {
     if item.asset_type != ASSET_OBJECT || is_link(item) {
         return None;
     }
+    if names_hud(&item.name) {
+        return None;
+    }
+    let words = name_words(item);
     seed()
         .iter()
-        .position(|kit| recognises(kit, item))
+        .position(|kit| recognises_words(kit, item, &words))
         .map(|at| (SEED[at].0, SEED[at].1))
 }
 
-/// The seed table as known kits (patterns are the required words, joined).
-pub fn seed() -> Vec<KnownKit> {
+/// The seed table as known kits (patterns are the required words, joined),
+/// built once.
+pub fn seed() -> &'static [KnownKit] {
+    static KITS: std::sync::LazyLock<Vec<KnownKit>> = std::sync::LazyLock::new(seed_kits);
+    &KITS
+}
+
+fn seed_kits() -> Vec<KnownKit> {
     SEED.iter()
         .map(|(name, part, words, sizes)| KnownKit {
             name: (*name).to_owned(),
@@ -163,13 +173,23 @@ impl Kits {
 /// Whether a known kit's pattern recognises an item: every word of the
 /// pattern is a word of the item's name, the creator matches when the kit
 /// names one, and the item is not a HUD.
+#[cfg(test)]
 fn recognises(kit: &KnownKit, item: &InvItem) -> bool {
-    if kit.creator.is_some_and(|c| c != item.creator) || names_hud(&item.name) {
+    !names_hud(&item.name) && recognises_words(kit, item, &name_words(item))
+}
+
+/// Every word of the name, its bracketed tags included: "[LEGACY]
+/// Meshbody (f)" is told by its tags.
+fn name_words(item: &InvItem) -> HashSet<String> {
+    all_words(&item.name).into_iter().collect()
+}
+
+/// `words`: the item's `name_words`, split once for every kit; a HUD is
+/// left out by the caller.
+fn recognises_words(kit: &KnownKit, item: &InvItem, words: &HashSet<String>) -> bool {
+    if kit.creator.is_some_and(|c| c != item.creator) {
         return false;
     }
-    // every word of the name, its bracketed tags included: "[LEGACY]
-    // Meshbody (f)" is told by its tags
-    let words: HashSet<String> = all_words(&item.name).into_iter().collect();
     kit.patterns
         .iter()
         .any(|pattern| !pattern.is_empty() && pattern.split(' ').all(|w| words.contains(w)))
@@ -193,14 +213,16 @@ pub fn kits(wardrobe: &Wardrobe, items: &[&InvItem], worn: &HashSet<Uuid>) -> Ki
     }
     // 2. the alias table: the user's kits, the cards', then the seed
     let known = wardrobe.account.my_kits.iter().chain(&wardrobe.catalogue.kits_known);
-    let seeded = seed();
-    for kit in known.chain(&seeded) {
+    // each name split once, for every kit
+    let named: Vec<(&InvItem, HashSet<String>)> = items
+        .iter()
+        .filter(|it| it.asset_type == ASSET_OBJECT && !is_link(it) && !declared.contains(&it.id) && !names_hud(&it.name))
+        .map(|it| (*it, name_words(it)))
+        .collect();
+    for kit in known.chain(seed()) {
         let at = kits.add(&kit.name, kit.part.unwrap_or(Part::Other), &kit.sizes);
-        for item in items
-            .iter()
-            .filter(|it| it.asset_type == ASSET_OBJECT && !is_link(it) && !declared.contains(&it.id))
-        {
-            if recognises(kit, item) {
+        for (item, words) in &named {
+            if recognises_words(kit, item, words) {
                 kits.list[at].owned = true;
                 kits.list[at].worn |= worn.contains(&item.id);
             }
@@ -356,7 +378,7 @@ mod tests {
 
     #[test]
     fn the_seed_recognises_a_body_and_not_what_was_made_for_it() {
-        let lara = seed().into_iter().find(|k| k.name == "Lara").expect("seed");
+        let lara = seed().iter().find(|k| k.name == "Lara").expect("seed");
         let body = InvItem {
             name: "Maitreya Mesh Body - Lara V5.3".into(),
             ..InvItem::default()
@@ -365,11 +387,11 @@ mod tests {
             name: "Night dress (Maitreya Lara)".into(),
             ..InvItem::default()
         };
-        assert!(recognises(&lara, &body));
-        assert!(!recognises(&lara, &dress));
+        assert!(recognises(lara, &body));
+        assert!(!recognises(lara, &dress));
         let mine = KnownKit {
             creator: Some(Uuid::from_u128(9)),
-            ..lara
+            ..lara.clone()
         };
         assert!(!recognises(&mine, &body));
     }

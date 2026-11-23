@@ -88,11 +88,21 @@ type GroupsKey = ((u64, Browse, usize), std::rc::Rc<Vec<Group>>);
 pub enum Picture {
     /// A texture of the grid, by asset: rendered, never printed.
     Asset(Uuid),
+    /// The texture item a card or the user named: rendered, never printed.
+    Texture(Uuid),
     /// A picture of the PC, by its file's name (`pictures.rs`).
     File(String),
     /// The look kept while the item was worn (`look.rs`): a file too, but
     /// one the live look replaces while the item is worn.
     Kept(String),
+}
+
+impl Picture {
+    /// A picture someone chose for the item: the live look of a worn item
+    /// does not replace it, and no look is kept for it.
+    pub fn chosen(&self) -> bool {
+        matches!(self, Picture::Texture(_) | Picture::File(_))
+    }
 }
 
 /// The picture of one copy, by precedence: the file the user chose, the
@@ -108,7 +118,7 @@ fn picture_of(inv: &Inventory, binding: &crate::world::wardrobe::store::Binding,
         .map(|texture| texture.asset_id)
         .filter(|asset| !asset.is_nil());
     if let Some(asset) = chosen {
-        return Some(Picture::Asset(asset));
+        return Some(Picture::Texture(asset));
     }
     // the look kept while it was worn, then the item's own image
     if let Some(file) = &binding.auto_picture {
@@ -131,7 +141,7 @@ pub struct KitRow {
 
 #[derive(Default)]
 pub struct Model {
-    key: Option<(u64, bool, usize)>,
+    key: Option<(u64, u64, bool, usize)>,
     pub tiles: Vec<Tile>,
     /// Any copy → its tile.
     pub by_item: HashMap<Uuid, usize>,
@@ -153,10 +163,11 @@ pub struct Model {
 }
 
 impl Model {
-    /// Rebuilds the tiles when the index moved. `worn`: the items worn now;
-    /// `stacks`: the copies of a product show as one tile.
+    /// Rebuilds the tiles when the index or the Wardrobe moved (a
+    /// favourite changes a tile, not the index). `worn`: the items worn
+    /// now; `stacks`: the copies of a product show as one tile.
     pub fn update(&mut self, shared: &Shared, inv: &Inventory, worn: &HashSet<Uuid>, stacks: bool) -> bool {
-        let key = (shared.index.generation, stacks, worn.len());
+        let key = (shared.index.generation, shared.wardrobe.revision, stacks, worn.len());
         if self.key == Some(key) {
             return false;
         }
@@ -590,9 +601,12 @@ pub fn visible(
         .filter_map(|(n, t)| t.hit(&q.words, filter.scope, names).map(|hit| (n, hit)))
         .collect();
     let tile = |n: usize| &model.tiles[n];
-    out.sort_by(|(a, _), (b, _)| {
-        let (a, b) = (tile(*a), tile(*b));
-        let by_name = || crate::natural_order::key(&a.name).cmp(&crate::natural_order::key(&b.name));
+    // each name's key made once, not at every comparison
+    let names_key: HashMap<usize, crate::natural_order::Key> =
+        out.iter().map(|(n, _)| (*n, crate::natural_order::key(&tile(*n).name))).collect();
+    out.sort_by(|(na, _), (nb, _)| {
+        let (a, b) = (tile(*na), tile(*nb));
+        let by_name = || names_key[na].cmp(&names_key[nb]);
         let order = match sort {
             SortBy::Added => b.added.cmp(&a.added).then_with(by_name),
             SortBy::LastWorn => b.last_worn.cmp(&a.last_worn).then_with(by_name),

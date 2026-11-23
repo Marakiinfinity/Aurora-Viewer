@@ -27,14 +27,17 @@ pub(super) fn show(
         (at >= 0).then(|| order.get(at as usize).copied()).flatten()
     };
     let (mut close, mut go, mut wear_now, mut try_now) = (false, None, false, false);
-    ctx.input(|i| {
-        if i.key_pressed(egui::Key::ArrowLeft) {
+    // consumed, as the grid does: the arrows must not walk the avatar, Enter
+    // must not open the chat bar nor Space jump
+    let none = egui::Modifiers::NONE;
+    ctx.input_mut(|i| {
+        if i.consume_key(none, egui::Key::ArrowLeft) {
             go = step(-1);
-        } else if i.key_pressed(egui::Key::ArrowRight) {
+        } else if i.consume_key(none, egui::Key::ArrowRight) {
             go = step(1);
         }
-        wear_now = i.key_pressed(egui::Key::Enter);
-        close = i.key_pressed(egui::Key::Space) && !st.wardrobe.quick_opened_now;
+        wear_now = i.consume_key(none, egui::Key::Enter);
+        close = i.consume_key(none, egui::Key::Space) && !st.wardrobe.quick_opened_now;
     });
     st.wardrobe.quick_opened_now = false;
     let worn = facts.worn.contains(&item);

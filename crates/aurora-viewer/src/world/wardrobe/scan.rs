@@ -104,6 +104,9 @@ pub fn card_scope(inv: &Inventory, folder: Uuid) -> Vec<&InvItem> {
 pub struct Index {
     key: Option<(u64, u64, u64)>,
     built: Option<std::time::Instant>,
+    /// The Wardrobe's revision last seen, and its `index_key` then.
+    revision: u64,
+    wardrobe_key: u64,
     /// The Wardrobe items that exist in the inventory.
     pub items: Vec<Uuid>,
     /// Item → its HUD items; and every HUD a rule attaches to an item.
@@ -126,7 +129,13 @@ impl Index {
     /// Rebuilds the index when the inventory, the Wardrobe or the worn set
     /// changed. Returns whether it did.
     pub fn update(&mut self, wardrobe: &Wardrobe, inv: &Inventory, worn: &HashSet<Uuid>) -> bool {
-        let key = (inv.generation, wardrobe.revision, worn_key(worn));
+        // a revision whose change the index does not read (a favourite, a
+        // card seen) is taken as it is, without a rebuild
+        if self.revision != wardrobe.revision {
+            self.revision = wardrobe.revision;
+            self.wardrobe_key = wardrobe.index_key();
+        }
+        let key = (inv.generation, self.wardrobe_key, worn_key(worn));
         // an edit of the Wardrobe or a change of outfit shows at once; the
         // inventory arriving folder by folder is followed a few times a
         // second

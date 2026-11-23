@@ -86,6 +86,15 @@ fn names_fold_to_tell_copies() {
     assert_eq!(hud_stem("Sora head [HUD]").as_deref(), Some("sora head"));
     assert_eq!(hud_stem("Sora head"), None);
     assert_eq!(hud_stem("HUD"), None);
+    // the stem folds as the item's own name does
+    assert_eq!(
+        hud_stem("[Brand] Sora head HUD").as_deref(),
+        Some(fold("[Brand] Sora head").as_str())
+    );
+    assert_eq!(hud_stem("Sora head HUD (red)").as_deref(), Some(fold("Sora head (red)").as_str()));
+    assert_eq!(hud_stem("Sora head – HUD v2").as_deref(), Some("sora head"));
+    assert_eq!(hud_stem("[Brand] HUD").as_deref(), Some("brand"));
+    assert!(!matching::names_hud("Shudder dress"));
     assert_eq!(slug("Night market set v1.2"), "night-market-set");
     assert_eq!(slug("!!!"), "unnamed");
 }
@@ -423,6 +432,35 @@ fn a_store_is_linked_to_one_item_or_to_a_creator() {
     assert!(wardrobe.catalogue.creator_stores.is_empty());
     assert_eq!(wardrobe.account.bindings[&id(2)].store, None);
     assert_eq!(name(&wardrobe, 1, CREATOR), None);
+    // an undone removal puts the store back with its creator's link
+    wardrobe.change(true, |txn| {
+        txn.set_store(Store {
+            key: shop,
+            name: "Velvet Lane".into(),
+            source: Source::User,
+            ..Store::default()
+        });
+        txn.link_creator(CREATOR, Some(shop));
+    });
+    wardrobe.change(true, |txn| txn.remove_store(shop));
+    assert_eq!(name(&wardrobe, 1, CREATOR), None);
+    assert!(wardrobe.undo());
+    assert_eq!(name(&wardrobe, 1, CREATOR).as_deref(), Some("Velvet Lane"));
+}
+
+#[test]
+fn a_large_change_is_undone_whole() {
+    let mut wardrobe = Wardrobe::in_memory();
+    wardrobe.change(true, |txn| {
+        for n in 1..=5000u128 {
+            txn.binding(id(n)).sorted = vec![Tag::new("tops", OTHER)];
+            // touched again in the same change: undone to before the first
+            txn.binding(id(n)).favorite = true;
+        }
+    });
+    assert_eq!(wardrobe.account.bindings.len(), 5000);
+    assert!(wardrobe.undo());
+    assert!(wardrobe.account.bindings.is_empty());
 }
 
 #[test]
